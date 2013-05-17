@@ -160,7 +160,7 @@ class Discoverer(gst.Pipeline):
             self.src.set_property("location", os.path.abspath(filename))
         
         if self.src is not None:
-            self.dbin = gst.element_factory_make("decodebin")
+            self.dbin = gst.element_factory_make("decodebin2")
                 
             self.add(self.src, self.dbin)
             self.src.link(self.dbin)

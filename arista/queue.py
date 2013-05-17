@@ -88,6 +88,8 @@ class TranscodeQueue(gobject.GObject):
                              gobject.TYPE_PYOBJECT)),  # is_media
         "entry-pass-setup": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
                             (gobject.TYPE_PYOBJECT,)), # QueueEntry
+        "entry-pass-complete": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
+                            (gobject.TYPE_PYOBJECT,)), # QueueEntry
         "entry-start": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
                        (gobject.TYPE_PYOBJECT,)),      # QueueEntry
         "entry-error": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
@@ -193,7 +195,10 @@ class TranscodeQueue(gobject.GObject):
                     self.emit("entry-error", item, _("Not a recognized media file!"))
                     self._queue.pop(0)
                     self.pipe_running = False
-            
+           
+            def pass_complete(transcoder):
+                self.emit("entry-pass-complete", item)
+ 
             def pass_setup(transcoder):
                 self.emit("entry-pass-setup", item)
                 if transcoder.enc_pass == 0:
@@ -206,6 +211,7 @@ class TranscodeQueue(gobject.GObject):
             
             item.transcoder.connect("discovered", discovered)
             item.transcoder.connect("pass-setup", pass_setup)
+            item.transcoder.connect("pass-complete", pass_complete)
             item.transcoder.connect("error", error)
             self.pipe_running = True
         return True

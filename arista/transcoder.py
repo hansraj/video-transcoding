@@ -88,7 +88,7 @@ class TranscoderOptions(object):
     def __init__(self, uri = None, preset = None, output_uri = None, ssa = False,
                  subfile = None, subfile_charset = None, font = "Sans Bold 16",
                  deinterlace = None, crop = None, title = None, chapter = None,
-                 audio = None):
+                 audio = None, start_time = 0, stop_time = 0, nb_threads = 0):
         """
             @type uri: str
             @param uri: The URI to the input file, device, or stream
@@ -114,14 +114,22 @@ class TranscoderOptions(object):
             @param chapter: DVD chapter index
             @type audio: int
             @param audio: DVD audio stream index
+
+            @type start_time: int
+            @param start_time: Seek start position. 
+            @type stop_time: int
+            @param stop_time: Seek end position
+
+            @type nb_threads: int
+            @param nb_threads: Number of threads to use
         """
-        self.reset(uri, preset, output_uri, ssa,subfile, subfile_charset, font,
-                   deinterlace, crop, title, chapter, audio)
+        self.reset(uri, preset, output_uri, ssa,subfile, subfile_charset, font, deinterlace,
+                   crop, title, chapter, audio, start_time, stop_time, nb_threads)
     
     def reset(self, uri = None, preset = None, output_uri = None, ssa = False,
               subfile = None, subfile_charset = None, font = "Sans Bold 16",
               deinterlace = None, crop = None, title = None, chapter = None,
-              audio = None):
+              audio = None, start_time = 0, stop_time = -1, nb_threads = 0):
         """
             Reset the input options to nothing.
         """
@@ -137,6 +145,9 @@ class TranscoderOptions(object):
         self.title = title
         self.chapter = chapter
         self.audio = audio
+        self.start_time = start_time
+        self.stop_time = stop_time
+        self.nb_threads = nb_threads
 
 # =============================================================================
 # The Transcoder

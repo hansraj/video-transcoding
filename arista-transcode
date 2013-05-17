@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
 """
@@ -56,6 +56,7 @@ status_msg = ""
 transcoder = None
 loop = None
 interrupted = False
+encoding = False 
 
 def print_status(enc, options):
     """
@@ -64,9 +65,10 @@ def print_status(enc, options):
     """
     global status_msg
     global interrupted
+    global encoding
     percent = 0.0
     
-    if interrupted or not enc:
+    if interrupted or not encoding or not enc:
         return True
     
     if enc.state == gst.STATE_NULL and interrupted:
@@ -102,7 +104,14 @@ def entry_start(queue, entry, options):
     
     gobject.timeout_add(500, print_status, entry.transcoder, options)
 
+def entry_pass_complete(queue, entry, options):
+    global encoding 
+    encoding = False
+
 def entry_pass_setup(queue, entry, options):
+    global encoding 
+    encoding = True
+
     if not options.quiet:
         if entry.transcoder.enc_pass > 0:
             print # blank line
@@ -207,6 +216,14 @@ if __name__ == "__main__":
     parser.add_option("--reset-presets", dest = "reset",
                       action = "store_true", default=False,
                       help = _("Reset presets to factory defaults"))
+    parser.add_option("--start-time", dest="start_time", default=0, nargs=1, type=int,
+                      help = _("Start position for the seek (default 0). "\
+                               "Start from the beginning"))
+    parser.add_option("--stop-time", dest="stop_time", default=0, nargs=1, type=int,
+                      help = _("Stop position for the seek (default 0). "\
+                               "Seek upto end"))
+    parser.add_option("--nb-threads", dest="nb_threads", default=0, nargs=1, type=int,
+                      help = _("Number of threads to use (default 0 = auto-detect)."))
 
     options, args = parser.parse_args()
     
@@ -393,12 +410,16 @@ if __name__ == "__main__":
                                      subfile = options.subtitle,
                                      subfile_charset = options.subtitle_encoding,
                                      font = options.font,
-                                     crop = options.crop)
-            
+                                     crop = options.crop,
+                                     start_time = options.start_time,
+                                     stop_time = options.stop_time,
+                                     nb_threads = options.nb_threads)
+
             queue.append(opts)
         
         queue.connect("entry-start", entry_start, options)
         queue.connect("entry-pass-setup", entry_pass_setup, options)
+        queue.connect("entry-pass-complete", entry_pass_complete, options)
         queue.connect("entry-error", entry_error, options)
         queue.connect("entry-complete", entry_complete, options)
         

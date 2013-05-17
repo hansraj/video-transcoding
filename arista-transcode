@@ -219,8 +219,8 @@ if __name__ == "__main__":
     parser.add_option("--start-time", dest="start_time", default=0, nargs=1, type=int,
                       help = _("Start position for the seek (default 0). "\
                                "Start from the beginning"))
-    parser.add_option("--stop-time", dest="stop_time", default=0, nargs=1, type=int,
-                      help = _("Stop position for the seek (default 0). "\
+    parser.add_option("--stop-time", dest="stop_time", default=-1, nargs=1, type=int,
+                      help = _("Stop position for the seek (default -1). "\
                                "Seek upto end"))
     parser.add_option("--nb-threads", dest="nb_threads", default=0, nargs=1, type=int,
                       help = _("Number of threads to use (default 0 = auto-detect)."))

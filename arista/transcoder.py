@@ -32,6 +32,7 @@ import os
 import os.path
 import sys
 import time
+import threading
 
 # Default to 1 CPU
 CPU_COUNT = 1 
@@ -88,7 +89,7 @@ class TranscoderOptions(object):
     def __init__(self, uri = None, preset = None, output_uri = None, ssa = False,
                  subfile = None, subfile_charset = None, font = "Sans Bold 16",
                  deinterlace = None, crop = None, title = None, chapter = None,
-                 audio = None, start_time = 0, stop_time = 0, nb_threads = 0):
+                 audio = None, start_time = 0, stop_time = -1, nb_threads = 0):
         """
             @type uri: str
             @param uri: The URI to the input file, device, or stream
@@ -241,7 +242,7 @@ class Transcoder(gobject.GObject):
                             self.emit("error", str(e))
                             return
                         
-                        self.start()
+                        self.pause()
                         return
                 
                 self.options.uri = fname + "@" + str(title + 1) + ":a:a"
@@ -265,13 +266,15 @@ class Transcoder(gobject.GObject):
                         self.emit("error", str(e))
                         return
                         
-                    self.start()
+                    self.pause()
             
             self.info = None
             self.discoverer = discoverer.Discoverer(options.uri)
             self.discoverer.connect("discovered", _got_info)
             self.discoverer.discover()
-    
+   
+            self._lock = threading.Lock()
+ 
     @property
     def infile(self):
         """
@@ -330,7 +333,7 @@ class Transcoder(gobject.GObject):
         else:
             filename = "file://" + os.path.abspath(self.infile)
             
-        return "uridecodebin uri=\"%s\" name=dmux" % filename
+        return "uridecodebin uri=\"%s\" name=uridecode" % filename
     
     def _setup_pass(self):
         """
@@ -374,11 +377,12 @@ class Transcoder(gobject.GObject):
         else:
             premux = "sink."
         
-        src = self._get_source()
+        uridecode_str = self._get_source()
         
-        cmd = "%s %s filesink name=sink " \
-              "location=\"%s\"" % (src, mux_str, self.options.output_uri)
-            
+        mux_str = "%s filesink name=sink " \
+                  "location=\"%s\"" % (mux_str, self.options.output_uri)
+        
+        video_str = ""    
         if self.info.is_video and self.preset.vcodec:
             # =================================================================
             # Update limits based on what the encoder really supports
@@ -537,7 +541,7 @@ class Transcoder(gobject.GObject):
                 transform = self.preset.vcodec.transform + " ! "
             
             sub = ""
-            if self.options.subfile:
+            if self.options.subfile and self.options.start_time == 0:
                 charset = ""
                 if self.options.subfile_charset:
                     charset = "subtitle-encoding=\"%s\"" % \
@@ -547,32 +551,40 @@ class Transcoder(gobject.GObject):
                 sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
                     "font": self.options.font,
                 }
-                cmd += " filesrc location=\"%(subfile)s\" ! subparse " \
-                       "%(subfile_charset)s ! txt." % {
-                    "subfile": self.options.subfile,
-                    "subfile_charset": charset,
+                video_str += " filesrc location=\"%(subfile)s\" ! subparse " \
+                             "%(subfile_charset)s ! txt." % {
+                             "subfile": self.options.subfile,
+                             "subfile_charset": charset,
                 }
+            elif self.options.subfile:
+                _log.debug(_("Subtitles not supported in combination with seeking."))
 
-            if self.options.ssa is True:             
+            if self.options.ssa is True and self.options.start_time == 0:             
                 # Render subtitles onto the video stream
                 sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
                     "font": self.options.font,
                 }
-                cmd += " filesrc location=\"%(infile)s\" ! matroskademux name=demux ! ssaparse ! txt. " % {
+                video_str += " filesrc location=\"%(infile)s\" ! matroskademux name=demux ! ssaparse ! txt. " % {
                     "infile": self.infile,
                 }
+            elif self.options.ssa is True:
+                _log.debug(_("Subtitles not supported in combination with seeking."))
             
             vmux = premux
             if container in ["qtmux", "webmmux", "ffmux_dvd", "matroskamux"]:
                 if premux.startswith("mux"):
                     vmux += "video_%d"
             
-            cmd += " dmux. ! queue ! ffmpegcolorspace ! videorate !" \
+            video_str += " queue name=q_dec_venc_%d " + " ! ffmpegcolorspace ! videorate !" \
                    "%s %s %s %s videoscale ! %s ! %s%s ! tee " \
-                   "name=videotee ! queue ! %s" % \
+                   "name=videotee" % \
                    (deint, vcrop, transform, sub, self.vcaps.to_string(), vbox,
-                    vencoder, vmux)
-            
+                    vencoder)
+            video_str += " ! queue name=q_venc_mux_%d "
+
+        _log.debug(video_str)
+
+        audio_str = "" 
         if self.info.is_audio and self.preset.acodec and \
            self.enc_pass == len(self.preset.vcodec.passes) - 1:
             # =================================================================
@@ -636,31 +648,41 @@ class Transcoder(gobject.GObject):
                 if premux.startswith("mux"):
                     amux += "audio_%d"
             
-            cmd += " dmux. ! queue ! audioconvert ! " \
-                   "audiorate tolerance=100000000 ! " \
-                   "audioresample ! %s ! %s ! %s" % \
-                   (self.acaps.to_string(), aencoder, amux)
+            audio_str += " queue name=q_dec_aenc_%d" + " ! audioconvert ! " \
+                         "audiorate tolerance=100000000 ! " \
+                         "audioresample ! %s ! %s " % \
+                         (self.acaps.to_string(), aencoder)
+            audio_str += " ! queue name=q_aenc_mux_%d"
         
         # =====================================================================
         # Build the pipeline and get ready!
         # =====================================================================
-        self._build_pipeline(cmd)
-        
-        self.emit("pass-setup")
+
+        self.counter = 1
+        self.prerolled = False
+
+        self.video_str = video_str
+        self.audio_str = audio_str
+        self.mux_str = mux_str
+
+        self._build_pipeline(uridecode_str)
     
-    def _build_pipeline(self, cmd):
+    def _build_pipeline(self, uridecode_str):
         """
             Build a gstreamer pipeline from a given gst-launch style string and
             connect a callback to it to receive messages.
             
-            @type cmd: string
-            @param cmd: A gst-launch string to construct a pipeline from.
+            @type uridecode_str: string
+            @param uridecode_str: A gst-launch string to construct a decode pipeline from.
+            @type mux_str: string
+            @param mux_str: A gst-launch string to construct a muxer sub-pipeline from.
+            @type video_str: string
+            @param video_str: A gst-launch string to construct a video sub-pipeline from.
+            @type audio_str: string
+            @param audio_str: A gst-launch string to construct a audio sub-pipeline from.
         """
-        _log.debug(cmd.replace("(", "\\(").replace(")", "\\)")\
-                      .replace(";", "\;"))
-        
         try:
-            self.pipe = gst.parse_launch(cmd)
+            self.pipe = gst.parse_launch(uridecode_str + " ! fakesink name = fake") # We need a fakesink or uridecodebin won't seek
         except gobject.GError, e:
             raise PipelineException(_("Unable to construct pipeline! ") + \
                                     str(e))
@@ -668,7 +690,104 @@ class Transcoder(gobject.GObject):
         bus = self.pipe.get_bus()
         bus.add_signal_watch()
         bus.connect("message", self._on_message)
-    
+
+        uridecode_elem = self.pipe.get_by_name("uridecode")
+        uridecode_elem.connect("pad-added", self._cb_uridecode_pad_added)
+        uridecode_elem.connect("no-more-pads", self._cb_uridecode_no_more_pads)
+
+    def _dec_counter(self):
+        self._lock.acquire()
+        self.counter -= 1
+        counter = self.counter
+        self._lock.release()
+        if counter == 0:
+            self.prerolled = True
+            m = gst.message_new_application(self.pipe, 
+                                            gst.Structure("Prerolled"))
+            self.pipe.post_message(m)
+
+    def _cb_pad_blocked(self, pad, is_blocked):
+        if self.prerolled :
+            _log.debug("already prerolled")
+            return
+        self._dec_counter()
+
+    def _cb_uridecode_pad_added(self, elem, pad):
+        pad.set_blocked_async(True, self._cb_pad_blocked) 
+        self._lock.acquire()
+        self.counter += 1
+        self._lock.release()
+
+    def _cb_uridecode_no_more_pads(self, elem):
+        self._dec_counter()
+
+    def _handle_video_pad_added(self, elem, pad, video_pads):
+        if not self.video_str:
+            return
+
+        video_str = self.video_str % (video_pads, video_pads)
+        video_subpipe = gst.parse_launch(video_str)
+
+        if video_subpipe:
+            video_subpipe.set_state(gst.STATE_PAUSED)
+            self.pipe.add(video_subpipe)
+            _log.debug("Adding %s to pipeline " % video_subpipe)
+
+            vq = self.pipe.get_by_name("q_dec_venc_%d" % video_pads)
+            link = elem.link(vq)
+            _log.debug("Result of linking %s to % s => %r" % (elem, vq, link))
+
+            muxer = self.pipe.get_by_name("mux")
+            q = self.pipe.get_by_name("q_venc_mux_%d" % video_pads)
+            link = q.link(muxer)
+            _log.debug("Result of linking %s to % s => %r" % (q, muxer, link))
+
+    def _handle_audio_pad_added(self, elem, pad, audio_pads):
+        if not self.audio_str:
+            return
+
+        audio_str = self.audio_str % (audio_pads, audio_pads)
+        audio_subpipe = gst.parse_launch(audio_str)
+
+        if audio_subpipe:
+            audio_subpipe.set_state(gst.STATE_PAUSED)
+            self.pipe.add(audio_subpipe)
+            _log.debug("Adding %s to pipeline " % audio_subpipe)
+
+            aq = self.pipe.get_by_name("q_dec_aenc_%d" % audio_pads)
+            link = elem.link(aq)
+            _log.debug("Result of linking %s to % s => %r" % (elem, aq, link))
+            
+            muxer = self.pipe.get_by_name("mux")
+            q = self.pipe.get_by_name("q_aenc_mux_%d" % audio_pads)
+            link = q.link(muxer)
+            _log.debug("Result of linking %s to % s => %r" % (q, muxer, link))
+
+    def _do_seek(self, elem):
+        start, stop = self.options.start_time, self.options.stop_time
+        
+        if start < 0 or stop < -1:
+            _log.debug("Start(%d) or Stop(%d) time is invalid" % \
+                        (start, stop))
+            return False
+
+        if stop > -1  and start > stop:
+            _log.debug("start(%d) is greater than stop(%d)" % \
+                        (start, stop))
+            return False
+
+        if stop == -1:
+            stop_seek_type = gst.SEEK_TYPE_NONE
+        else:
+            stop_seek_type = gst.SEEK_TYPE_SET
+
+        seek_flags = gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE
+
+        ret = elem.seek(1.0, gst.FORMAT_TIME, seek_flags,
+                        gst.SEEK_TYPE_SET, start * gst.SECOND,
+                        stop_seek_type, stop * gst.SECOND)
+        return ret
+
     def _on_message(self, bus, message):
         """
             Process pipe bus messages, e.g. start new passes and emit signals
@@ -686,9 +805,48 @@ class Transcoder(gobject.GObject):
             if self.enc_pass < self.preset.pass_count - 1:
                 self.enc_pass += 1
                 self._setup_pass()
-                self.start()
+                self.pause()
             else:
                 self.emit("complete")
+        elif t == gst.MESSAGE_APPLICATION:
+            msg_name = message.structure.get_name()
+            if msg_name == "Prerolled":
+                _log.debug("Prerolled application msg received!")
+
+                # Do a seek 
+                if self._do_seek(self.pipe) != True:
+                   _log.debug("Seek failed!")
+
+                uridecode_elem = self.pipe.get_by_name("uridecode")
+                fake = self.pipe.get_by_name("fake")
+
+                self.pipe.remove(fake)
+                fake.set_state(gst.STATE_NULL)
+
+                # adding muxer sub-pipe                
+                mux_subpipe = gst.parse_launch(self.mux_str)
+                mux_subpipe.set_state(gst.STATE_PAUSED)
+                self.pipe.add(mux_subpipe)
+
+                # adding and connecting the audio and video sub-pipes
+                video_pads = 0
+                audio_pads = 0
+                for pad in uridecode_elem.pads():
+                   if "video" in pad.get_caps().to_string():
+                      video_pads += 1
+                      self._handle_video_pad_added(uridecode_elem, pad, video_pads)
+                   elif "audio" in pad.get_caps().to_string():
+                      audio_pads += 1
+                      self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
+
+                # unblocking all pads again (no matter what type)
+                for pad in uridecode_elem.pads():
+                   pad.set_blocked(False)
+
+                self.start()
+                self.emit("pass-setup")
+        elif t == gst.MESSAGE_ASYNC_DONE:
+            _log.debug("ASYNC_DONE msg received!")
         
         self.emit("message", bus, message)
     

@@ -33,8 +33,8 @@ import os.path
 import sys
 import time
 
-# Default to 2 CPUs as most seem to be dual-core these days
-CPU_COUNT = 2
+# Default to 1 CPU
+CPU_COUNT = 1 
 try:
     import multiprocessing
     try:
@@ -183,7 +183,12 @@ class Transcoder(gobject.GObject):
         self.pipe = None
         
         self.enc_pass = 0
-        
+       
+        if self.options.nb_threads == 0: # auto-detect
+            self.cpu_count = CPU_COUNT
+        else:
+            self.cpu_count = self.options.nb_threads
+
         self._percent_cached = 0
         self._percent_cached_time = 0
         
@@ -288,7 +293,7 @@ class Transcoder(gobject.GObject):
             @return: The output preset
         """
         return self.options.preset
-    
+   
     def _get_source(self):
         """
             Return a file or dvd source string usable with gst.parse_launch.
@@ -520,7 +525,7 @@ class Transcoder(gobject.GObject):
             # =================================================================
             vencoder = "%s %s" % (self.preset.vcodec.name,
                                   self.preset.vcodec.passes[self.enc_pass] % {
-                                    "threads": CPU_COUNT,
+                                    "threads": self.cpu_count,
                                   })
             
             deint = ""
@@ -623,7 +628,7 @@ class Transcoder(gobject.GObject):
                             len(self.preset.vcodec.passes) - \
                             self.enc_pass - 1 \
                        ] % {
-                            "threads": CPU_COUNT,
+                            "threads": self.cpu_count,
                        }
             
             amux = premux

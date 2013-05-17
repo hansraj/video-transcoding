@@ -1,0 +1,293 @@
+{
+    "make": "Generic", 
+    "model": "Android", 
+    "description": "Presets for various Android devices", 
+    "version": "1.8", 
+    "author": {
+        "name": "Daniel G. Taylor", 
+        "email": "dan@programmer-art.org"
+    }, 
+    "default": "Samsung Galaxy S", 
+    "icon": "file://android.svg", 
+    "presets": [
+        {
+            "name": "Nexus One / Desire", 
+            "container": "mp4mux", 
+            "extension": "mp4", 
+            "icon": "file://android-nexus-one.svg", 
+            "vcodec": {
+                "name": "x264enc", 
+                "container": "mp4mux", 
+                "width": [
+                    320, 
+                    800
+                ], 
+                "height": [
+                    240, 
+                    480
+                ], 
+                "rate": [
+                    1,
+                    30
+                ], 
+                "passes": [
+                    "pass=qual quantizer=21 me=umh subme=6 ref=3 cabac=0 threads=0 profile=baseline"
+                ]
+            }, 
+            "acodec": {
+                "name": "faac", 
+                "container": "mp4mux", 
+                "width": [
+                    8, 
+                    24
+                ], 
+                "depth": [
+                    8, 
+                    24
+                ], 
+                "rate": [
+                    8000,
+                    96000
+                ], 
+                "channels": [
+                    1, 
+                    2
+                ], 
+                "passes": [
+                    "bitrate=128000 profile=LC"
+                ]
+            }
+        },
+        {
+            "name": "Droid / Milestone", 
+            "container": "mp4mux", 
+            "extension": "mp4", 
+            "icon": "file://android-droid.svg", 
+            "vcodec": {
+                "name": "x264enc", 
+                "container": "mp4mux", 
+                "width": [
+                    320, 
+                    854
+                ], 
+                "height": [
+                    240, 
+                    480
+                ], 
+                "rate": [
+                    1,
+                    30
+                ], 
+                "passes": [
+                    "pass=qual quantizer=21 me=umh subme=6 ref=3 cabac=0 threads=0 profile=baseline"
+                ]
+            }, 
+            "acodec": {
+                "name": "faac", 
+                "container": "mp4mux", 
+                "width": [
+                    8, 
+                    24
+                ], 
+                "depth": [
+                    8, 
+                    24
+                ], 
+                "rate": [
+                    8000,
+                    96000
+                ], 
+                "channels": [
+                    1, 
+                    2
+                ], 
+                "passes": [
+                    "bitrate=128000 profile=LC"
+                ]
+            }
+        },
+        {
+            "name": "Galaxy Spica / GT-I5700 / Galaxy Lite", 
+            "author": {
+				"name": "Christian Kakesa", 
+				"email": "christian.kakesa@gmail.com"
+			}, 
+			"container": "mp4mux", 
+            "extension": "mp4", 
+            "icon": "file://android-galaxy-lite.svg", 
+            "vcodec": {
+                "name": "x264enc", 
+                "container": "mp4mux", 
+                "width": [
+                    320, 720
+                ], 
+                "height": [
+                    240, 480
+                ], 
+                "rate": [
+                    1, 30
+                ], 
+                "passes": [
+                    "pass=qual quantizer=21 me=umh subme=6 ref=3 interlaced=false cabac=0 threads=0 profile=baseline"
+                ]
+            }, 
+            "acodec": {
+                "name": "faac", 
+                "container": "mp4mux", 
+                "width": [
+                    8, 16
+                ], 
+                "depth": [
+                    8, 16
+                ], 
+                "rate": [
+                    8000, 44100
+                ], 
+                "channels": [
+                    1, 2
+                ], 
+                "passes": [
+                    "bitrate=128000 profile=LC"
+                ]
+            }
+        },
+        {
+            "name": "G1 / Dream", 
+            "container": "mp4mux", 
+            "extension": "mp4", 
+            "icon": "file://android-g1.svg", 
+            "vcodec": {
+                "name": "x264enc", 
+                "container": "mp4mux", 
+                "width": [
+                    320, 
+                    854
+                ], 
+                "height": [
+                    240, 
+                    480
+                ], 
+                "rate": [
+                    1,
+                    30
+                ], 
+                "passes": [
+                    "pass=qual quantizer=21 me=umh subme=6 ref=3 cabac=0 threads=0 profile=baseline"
+                ]
+            }, 
+            "acodec": {
+                "name": "faac", 
+                "container": "mp4mux", 
+                "width": [
+                    8, 
+                    24
+                ], 
+                "depth": [
+                    8, 
+                    24
+                ], 
+                "rate": [
+                    8000,
+                    96000
+                ], 
+                "channels": [
+                    1, 
+                    2
+                ], 
+                "passes": [
+                    "bitrate=128000 profile=LC"
+                ]
+            }
+        },
+        {
+            "name": "Droid X", 
+            "author": {
+                "name": "Vick", 
+                "email": "vick.satar@gmail.com"
+            }, 
+            "extension": "mp4", 
+            "container": "mp4mux", 
+            "icon": "file://android-droidx.svg", 
+            "vcodec": {
+                "name": "x264enc", 
+                "container": "mp4mux", 
+                "width": [
+                    320, 1280
+                ], 
+                "height": [
+                    240, 720
+                ], 
+                "rate": [
+                    1, 30
+                ], 
+                "passes": [
+                    "pass=qual quantizer=18 subme=6 cabac=0 threads=0 profile=baseline"
+                ]
+            }, 
+            "acodec": {
+                "name": "faac", 
+                "container": "mp4mux", 
+                "width": [
+                    8, 24
+                ], 
+                "depth": [
+                    8, 24
+                ], 
+                "rate": [
+                    8000, 96000
+                ], 
+                "channels": [
+                    1, 2
+                ], 
+                "passes": [
+                    "bitrate=131072 profile=LC"
+                ]
+            }
+        }, 
+        {
+            "name": "Samsung Galaxy S", 
+            "author": {
+                "name": "Pierre Pericard", 
+                "email": "pierre.pericard@gmail.com"
+            }, 
+            "extension": "mp4", 
+            "icon": "file://android-galaxy-s.svg", 
+            "container": "mp4mux", 
+            "vcodec": {
+                "name": "x264enc", 
+                "container": "mp4mux", 
+                "width": [
+                    120, 800
+                ], 
+                "height": [
+                    120, 480
+                ], 
+                "rate": [
+                    1, 30
+                ], 
+                "passes": [
+                    "pass=qual quantizer=21 me=umh subme=6 ref=3 cabac=0 threads=0 profile=baseline"
+                ]
+            }, 
+            "acodec": {
+                "name": "faac", 
+                "container": "mp4mux", 
+                "width": [
+                    8, 32
+                ], 
+                "depth": [
+                    8, 24
+                ], 
+                "rate": [
+                    8000, 96000
+                ], 
+                "channels": [
+                    1, 2
+                ], 
+                "passes": [
+                    "bitrate=327680"
+                ]
+            }
+        }
+    ]
+}

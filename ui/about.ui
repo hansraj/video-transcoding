@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk+" version="2.16"/>
+  <!-- interface-naming-policy project-wide -->
+  <object class="GtkAboutDialog" id="about_dialog">
+    <property name="border_width">5</property>
+    <property name="window_position">center</property>
+    <property name="type_hint">normal</property>
+    <property name="program_name">Arista Transcoder</property>
+    <property name="version">0.9.8</property>
+    <property name="copyright" translatable="yes">Copyright 2008 - 2011 Daniel G. Taylor</property>
+    <property name="comments" translatable="yes">A multimedia transcoder for the GNOME desktop.</property>
+    <property name="website">http://www.transcoder.org/</property>
+    <property name="website_label" translatable="yes">Arista homepage</property>
+    <property name="license" translatable="yes">Arista is released under the GNU LGPL 2.1.
+Please see:
+
+http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html</property>
+    <property name="authors">Daniel G. Taylor &lt;dan@programmer-art.org&gt;</property>
+    <property name="translator_credits" translatable="yes">Arista is translated through launchpad.net. Please see:
+
+https://translations.launchpad.net/arista/trunk/+pots/arista</property>
+    <property name="artists">Daniel G. Taylor &lt;dan@programmer-art.org&gt;
+Sibrand Hoekstra &lt;sibrand@gmail.com&gt;
+
+Various icons made by Tango project contributors</property>
+    <property name="logo">icon.svg</property>
+    <signal name="response" handler="on_close"/>
+    <child internal-child="vbox">
+      <object class="GtkVBox" id="dialog-vbox4">
+        <property name="visible">True</property>
+        <property name="spacing">2</property>
+        <child>
+          <placeholder/>
+        </child>
+        <child internal-child="action_area">
+          <object class="GtkHButtonBox" id="dialog-action_area4">
+            <property name="visible">True</property>
+            <property name="layout_style">end</property>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="pack_type">end</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

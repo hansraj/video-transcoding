@@ -90,8 +90,8 @@ class TranscoderOptions(object):
                  subfile = None, subfile_charset = None, font = "Sans Bold 16",
                  deinterlace = None, crop = None, title = None, chapter = None,
                  audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
-                 height = None, width = None, frame_rate = None,
-                 video_bitrate = None, is_absolute = False):
+                 height = None, width = None, framerate = None,
+                 video_bitrate = None, absolute = False):
         """
             @type uri: str
             @param uri: The URI to the input file, device, or stream
@@ -128,14 +128,14 @@ class TranscoderOptions(object):
         """
         self.reset(uri, preset, output_uri, ssa,subfile, subfile_charset, font, deinterlace,
                    crop, title, chapter, audio, start_time, stop_time, nb_threads,
-                   height, width, frame_rate, video_bitrate, is_absolute)
+                   height, width, framerate, video_bitrate, absolute)
     
     def reset(self, uri = None, preset = None, output_uri = None, ssa = False,
               subfile = None, subfile_charset = None, font = "Sans Bold 16",
               deinterlace = None, crop = None, title = None, chapter = None,
               audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
-              height = None, width = None, frame_rate = None,
-              video_bitrate = None, is_absolute = False):
+              height = None, width = None, framerate = None,
+              video_bitrate = None, absolute = False):
         """
             Reset the input options to nothing.
         """
@@ -156,9 +156,9 @@ class TranscoderOptions(object):
         self.nb_threads = nb_threads
         self.height = height
         self.width = width
-        self.frame_rate = frame_rate
+        self.framerate = framerate
         self.video_bitrate = video_bitrate
-        self.is_absolute = is_absolute
+        self.absolute = absolute
 
 # =============================================================================
 # The Transcoder
@@ -341,7 +341,7 @@ class Transcoder(gobject.GObject):
 
         # FIXME : We assume the height and width are already validated
         if self.options.height is not None: # user specified height
-            if self.options.is_absolute:
+            if self.options.absolute:
                 output_height = self.options.height
             else: # percentage
                 output_height = int(input_height * (self.options.height / 100.0))
@@ -349,7 +349,7 @@ class Transcoder(gobject.GObject):
             output_height = input_height
         
         if self.options.width is not None:
-            if self.options.is_absolute:
+            if self.options.absolute:
                 output_width = self.options.width
             else:
                 output_width = int(input_width * (self.options.width / 100.0))
@@ -369,7 +369,7 @@ class Transcoder(gobject.GObject):
         owidth = output_width - crop[1] - crop[3]
         oheight = output_height - crop[0] - crop[2]
        
-        rel_or_abs = "(relative)" if not self.options.is_absolute else ""
+        rel_or_abs = "(relative)" if not self.options.absolute else ""
         _log.debug("video input::height: %d, width : %d" % \
                         (input_height, input_width))
         if self.options.height is not None and \
@@ -395,12 +395,12 @@ class Transcoder(gobject.GObject):
         # =================================================================
         """
         if self.options.width is not None:
-            if self.options.is_absolute_value:
+            if self.options.absolute_value:
                 width = self.options.width
             else:
                 width = (owidth * self.options.width/100)
         if self.options.height is not None:
-            if self.options.is_absolute_value:
+            if self.options.absolute_value:
                 height = self.options.height
             else:
                 height = (oheight * self.options.height/100)
@@ -459,14 +459,19 @@ class Transcoder(gobject.GObject):
         num = self.info.videorate.num
         denom = self.info.videorate.denom
 
-        if self.options.frame_rate is not None:
-            if self.options.is_absolute_value:
-                num = self.options.frame_rate
+        if self.options.framerate is not None:
+            if self.options.absolute:
+                num = self.options.framerate
                 denom = 1 #Considering the the denom to 1
             else:
-                num = round(num * self.options.frame_rate/100)
-                denom = round(denom * self.options.frame_rate/100) or 1
+                num = round(num * self.options.framerate/100)
+                denom = round(denom * self.options.framerate/100) or 1
 
+        _log.debug("Framerate before Preset Comparison: %d/%d" % (num, denom))
+        print self.preset.vcodec.rate[0].num,
+        print self.preset.vcodec.rate[0].denom
+        print self.preset.vcodec.rate[1].num,
+        print self.preset.vcodec.rate[1].denom
         rmin = self.preset.vcodec.rate[0].num / \
                    float(self.preset.vcodec.rate[0].denom)
         rmax = self.preset.vcodec.rate[1].num / \
@@ -480,6 +485,7 @@ class Transcoder(gobject.GObject):
             num = self.preset.vcodec.rate[0].num
             denom = self.preset.vcodec.rate[0].denom
 
+        _log.debug("Final Determined Framerate : %d/%d" % (num, denom))
         return num, denom    
 
     def _update_preset_to_aencoder_limits(self):
@@ -629,25 +635,10 @@ class Transcoder(gobject.GObject):
             # =================================================================
             # Setup video framerate and add to caps
             # =================================================================
-            rmin = self.preset.vcodec.rate[0].num / \
-                   float(self.preset.vcodec.rate[0].denom)
-            rmax = self.preset.vcodec.rate[1].num / \
-                   float(self.preset.vcodec.rate[1].denom)
-            orate = self.info.videorate.num / float(self.info.videorate.denom)
-            
-            if orate > rmax:
-                num = self.preset.vcodec.rate[1].num
-                denom = self.preset.vcodec.rate[1].denom
-            elif orate < rmin:
-                num = self.preset.vcodec.rate[0].num
-                denom = self.preset.vcodec.rate[0].denom
-            else:
-                num = self.info.videorate.num
-                denom = self.info.videorate.denom
-            
+            num, denom = self._setup_video_framerate() 
             for vcap in self.vcaps:
                 vcap["framerate"] = gst.Fraction(num, denom)
-            
+
             # =================================================================
             # Properly handle and pass through pixel aspect ratio information
             # =================================================================

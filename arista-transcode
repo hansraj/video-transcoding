@@ -236,6 +236,9 @@ if __name__ == "__main__":
     parser.add_option("--bitrate", dest = "bitrate",
                       default=None, nargs=1, type=int,
                       help = _("Set bitrate for the output video"))
+    parser.add_option("--absolute", dest = "absolute",
+                      default=False, action="store_true",
+                      help = _("Treat Params as absolute. (Use with caution)"))
 
 
     options, args = parser.parse_args()
@@ -429,7 +432,8 @@ if __name__ == "__main__":
                                      nb_threads = options.nb_threads,
                                      height = options.height,
                                      width = options.width,
-                                     frame_rate = options.framerate)
+                                     framerate = options.framerate,
+                                     absolute = options.absolute)
 
             queue.append(opts)
         
@@ -449,4 +453,3 @@ if __name__ == "__main__":
         
         loop = gobject.MainLoop()
         loop.run()
-

@@ -224,6 +224,19 @@ if __name__ == "__main__":
                                "Seek upto end"))
     parser.add_option("--nb-threads", dest="nb_threads", default=0, nargs=1, type=int,
                       help = _("Number of threads to use (default 0 = auto-detect)."))
+    parser.add_option("-W", "--width", dest = "width",
+                      default=None, nargs=1, type=int,
+                      help = _("Set width of the output video"))
+    parser.add_option("-H", "--height", dest = "height",
+                      default=None, nargs=1, type=int,
+                      help = _("Set height of the output video"))
+    parser.add_option("--framerate", dest = "framerate",
+                      default=None, nargs=1, type=int,
+                      help = _("Set framerate/(frames per sec) for the output video"))
+    parser.add_option("--bitrate", dest = "bitrate",
+                      default=None, nargs=1, type=int,
+                      help = _("Set bitrate for the output video"))
+
 
     options, args = parser.parse_args()
     
@@ -413,7 +426,10 @@ if __name__ == "__main__":
                                      crop = options.crop,
                                      start_time = options.start_time,
                                      stop_time = options.stop_time,
-                                     nb_threads = options.nb_threads)
+                                     nb_threads = options.nb_threads,
+                                     height = options.height,
+                                     width = options.width,
+                                     frame_rate = options.framerate)
 
             queue.append(opts)
         

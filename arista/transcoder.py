@@ -89,7 +89,9 @@ class TranscoderOptions(object):
     def __init__(self, uri = None, preset = None, output_uri = None, ssa = False,
                  subfile = None, subfile_charset = None, font = "Sans Bold 16",
                  deinterlace = None, crop = None, title = None, chapter = None,
-                 audio = None, start_time = 0, stop_time = -1, nb_threads = 0):
+                 audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
+                 height = None, width = None, frame_rate = None,
+                 video_bitrate = None, is_absolute = False):
         """
             @type uri: str
             @param uri: The URI to the input file, device, or stream
@@ -125,12 +127,15 @@ class TranscoderOptions(object):
             @param nb_threads: Number of threads to use
         """
         self.reset(uri, preset, output_uri, ssa,subfile, subfile_charset, font, deinterlace,
-                   crop, title, chapter, audio, start_time, stop_time, nb_threads)
+                   crop, title, chapter, audio, start_time, stop_time, nb_threads,
+                   height, width, frame_rate, video_bitrate, is_absolute)
     
     def reset(self, uri = None, preset = None, output_uri = None, ssa = False,
               subfile = None, subfile_charset = None, font = "Sans Bold 16",
               deinterlace = None, crop = None, title = None, chapter = None,
-              audio = None, start_time = 0, stop_time = -1, nb_threads = 0):
+              audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
+              height = None, width = None, frame_rate = None,
+              video_bitrate = None, is_absolute = False):
         """
             Reset the input options to nothing.
         """
@@ -149,6 +154,11 @@ class TranscoderOptions(object):
         self.start_time = start_time
         self.stop_time = stop_time
         self.nb_threads = nb_threads
+        self.height = height
+        self.width = width
+        self.frame_rate = frame_rate
+        self.video_bitrate = video_bitrate
+        self.is_absolute = is_absolute
 
 # =============================================================================
 # The Transcoder
@@ -193,88 +203,26 @@ class Transcoder(gobject.GObject):
         self._percent_cached = 0
         self._percent_cached_time = 0
         
-        if options.uri.startswith("dvd://") and len(options.uri.split("@")) < 2:
-            options.uri += "@%(title)s:%(chapter)s:%(audio)s" % {
-                "title": options.title or "a",
-                "chapter": options.chapter or "a",
-                "audio": options.audio or "a",
-            }
+        def _got_info(info, is_media):
+            self.info = info
+            self.emit("discovered", info, is_media)
             
-        if options.uri.startswith("dvd://") and not options.title:
-            # This is a DVD and no title is yet selected... find the best
-            # candidate by searching for the longest title!
-            parts = options.uri.split("@")
-            options.uri = parts[0] + "@0:a:a"
-            self.dvd_infos = []
-            
-            def _got_info(info, is_media):
-                self.dvd_infos.append([discoverer, info])
-                parts = self.options.uri.split("@")
-                fname = parts[0]
-                title = int(parts[1].split(":")[0])
-                if title >= 8:
-                    # We've checked 8 titles, let's give up and pick the
-                    # most likely to be the main feature.
-                    longest = 0
-                    self.info = None
-                    for disco, info in self.dvd_infos:
-                        if info.length > longest:
-                            self.discoverer = disco
-                            self.info = info
-                            longest = info.length
+            if info.is_video or info.is_audio:
+                try:
+                    self._setup_pass()
+                except PipelineException, e:
+                    self.emit("error", str(e))
+                    return
                     
-                    if not self.info:
-                        self.emit("error", _("No valid DVD title found!"))
-                        return
-                    
-                    self.options.uri = self.info.filename
-                    
-                    _log.debug(_("Longest title found is %(filename)s") % {
-                        "filename": self.options.uri,
-                    })
-                    
-                    self.emit("discovered", self.info, self.info.is_video or self.info.is_audio)
-                    
-                    if self.info.is_video or self.info.is_audio:
-                        try:
-                            self._setup_pass()
-                        except PipelineException, e:
-                            self.emit("error", str(e))
-                            return
-                        
-                        self.pause()
-                        return
-                
-                self.options.uri = fname + "@" + str(title + 1) + ":a:a"
-                self.discoverer = discoverer.Discoverer(options.uri)
-                self.discoverer.connect("discovered", _got_info)
-                self.discoverer.discover()
-            
-            self.discoverer = discoverer.Discoverer(options.uri)
-            self.discoverer.connect("discovered", _got_info)
-            self.discoverer.discover()
+                self.pause()
         
-        else:
-            def _got_info(info, is_media):
-                self.info = info
-                self.emit("discovered", info, is_media)
-                
-                if info.is_video or info.is_audio:
-                    try:
-                        self._setup_pass()
-                    except PipelineException, e:
-                        self.emit("error", str(e))
-                        return
-                        
-                    self.pause()
-            
-            self.info = None
-            self.discoverer = discoverer.Discoverer(options.uri)
-            self.discoverer.connect("discovered", _got_info)
-            self.discoverer.discover()
-   
-            self._lock = threading.Lock()
- 
+        self.info = None
+        self.discoverer = discoverer.Discoverer(options.uri)
+        self.discoverer.connect("discovered", _got_info)
+        self.discoverer.discover()
+  
+        self._lock = threading.Lock()
+
     @property
     def infile(self):
         """
@@ -306,54 +254,16 @@ class Transcoder(gobject.GObject):
             @rtype: string
             @return: Source to prepend to gst-launch style strings.
         """
-        if self.infile.startswith("dvd://"):
-            parts = self.infile.split("@")
-            device = parts[0][6:]
-            rest = len(parts) > 1 and parts[1].split(":")
-            
-            title = 1
-            if rest:
-                try:
-                    title = int(rest[0])
-                except:
-                    title = 1
-                try:
-                    chapter = int(rest[1])
-                except:
-                    chapter = None
-            
-            if self.options.deinterlace is None:
-                self.options.deinterlace = True
-            
-            return "dvdreadsrc device=\"%s\" title=%d %s ! decodebin2 name=dmux" % (device, title, chapter and "chapter=" + str(chapter) or '')
-        elif self.infile.startswith("v4l://") or self.infile.startswith("v4l2://"):
-            filename = self.infile
-        elif self.infile.startswith("file://"):
+        # FIXME : Not dealing with http source in transcoder yet
+        if self.infile.startswith("file://"):
             filename = self.infile
         else:
             filename = "file://" + os.path.abspath(self.infile)
             
         return "uridecodebin uri=\"%s\" name=uridecode" % filename
     
-    def _setup_pass(self):
-        """
-            Setup the pipeline for an encoding pass. This configures the
-            GStreamer elements and their setttings for a particular pass.
-        """
-        # Get limits and setup caps
-        self.vcaps = gst.Caps()
-        self.vcaps.append_structure(gst.Structure("video/x-raw-yuv"))
-        self.vcaps.append_structure(gst.Structure("video/x-raw-rgb"))
-        
-        self.acaps = gst.Caps()
-        self.acaps.append_structure(gst.Structure("audio/x-raw-int"))
-        self.acaps.append_structure(gst.Structure("audio/x-raw-float"))
-        
-        # =====================================================================
-        # Setup video, audio/video, or audio transcode pipeline
-        # =====================================================================
-        
-        # Figure out which mux element to use
+    # From Hansraj's code
+    def _get_container(self):
         container = None
         if self.info.is_video and self.info.is_audio:
             container = self.preset.container
@@ -365,24 +275,9 @@ class Transcoder(gobject.GObject):
             container = self.preset.acodec.container and \
                         self.preset.acodec.container or \
                         self.preset.container
-        
-        mux_str = ""
-        if container:
-            mux_str = "%s name=mux ! queue !" % container
-        
-        # Decide whether or not we are using a muxer and link to it or just
-        # the file sink if we aren't (for e.g. mp3 audio)
-        if mux_str:
-            premux = "mux."
-        else:
-            premux = "sink."
-        
-        uridecode_str = self._get_source()
-        
-        mux_str = "%s filesink name=sink " \
-                  "location=\"%s\"" % (mux_str, self.options.output_uri)
-        
-        video_str = ""    
+        return container
+    
+    def _update_preset_to_vencoder_limits(self):
         if self.info.is_video and self.preset.vcodec:
             # =================================================================
             # Update limits based on what the encoder really supports
@@ -408,75 +303,328 @@ class Transcoder(gobject.GObject):
                         if cur[1] > vmax:
                             cur = (cur[0], vmax)
                             setattr(self.preset.vcodec, field, cur)
+
+
+    def _setup_pixel_aspect_ratio(self):
+        # =================================================================
+        # Properly handle and pass through pixel aspect ratio information
+        # =================================================================
+        for x in range(self.info.videocaps.get_size()):
+            struct = self.info.videocaps[x]
+            if struct.has_field("pixel-aspect-ratio"):
+                # There was a bug in xvidenc that flipped the fraction
+                # Fixed in svn on 12 March 2008
+                # We need to flip the fraction on older releases!
+                par = struct["pixel-aspect-ratio"]
+                if self.preset.vcodec.name == "xvidenc":
+                    for p in gst.registry_get_default().get_plugin_list():
+                        if p.get_name() == "xvid":
+                            if p.get_version() <= "0.10.6":
+                                par.num, par.denom = par.denom, par.num
+                for vcap in self.vcaps:
+                    vcap["pixel-aspect-ratio"] = par
+                break
+
+        # FIXME a bunch of stuff doesn't seem to like pixel aspect ratios
+        # Just force everything to go to 1:1 for now...
+        for vcap in self.vcaps:
+            vcap["pixel-aspect-ratio"] = gst.Fraction(1, 1)
             
-            # =================================================================
-            # Calculate video width/height, crop and add black bars if necessary
-            # =================================================================
-            vcrop = ""
-            crop = [0, 0, 0, 0]
-            if self.options.crop:
-                crop = self.options.crop
-                vcrop = "videocrop top=%i right=%i bottom=%i left=%i ! "  % \
-                        (crop[0], crop[1], crop[2], crop[3])
+
+    def _validate_and_update_resolution(self):
+        # =================================================================
+        # Calculate video width/height, crop and add black bars if necessary
+        # =================================================================
+
+        input_width = self.info.videowidth
+        input_height = self.info.videoheight
+
+        # FIXME : We assume the height and width are already validated
+        if self.options.height is not None: # user specified height
+            if self.options.is_absolute:
+                output_height = self.options.height
+            else: # percentage
+                output_height = int(input_height * (self.options.height / 100.0))
+        else:
+            output_height = input_height
+        
+        if self.options.width is not None:
+            if self.options.is_absolute:
+                output_width = self.options.width
+            else:
+                output_width = int(input_width * (self.options.width / 100.0))
+        else:
+            output_width = input_width
+
+        vcrop = ""
+        crop = [0, 0, 0, 0]
+        if self.options.crop:
+            crop = self.options.crop
+            vcrop = "videocrop top=%i right=%i bottom=%i left=%i ! "  % \
+                     (crop[0], crop[1], crop[2], crop[3])
+
+        wmin, wmax = self.preset.vcodec.width
+        hmin, hmax = self.preset.vcodec.height
             
-            wmin, wmax = self.preset.vcodec.width
-            hmin, hmax = self.preset.vcodec.height
+        owidth = output_width - crop[1] - crop[3]
+        oheight = output_height - crop[0] - crop[2]
+       
+        rel_or_abs = "(relative)" if not self.options.is_absolute else ""
+        _log.debug("video input::height: %d, width : %d" % \
+                        (input_height, input_width))
+        if self.options.height is not None and \
+            self.options.width is not None:
+            _log.debug("user input::height: %d, width : %d %s" % \
+                        (self.options.height, self.options.width, rel_or_abs))
+        
+        _log.debug("crop::top:%d, right:%d,bottom:%d, left:%d"  % \
+                    tuple(crop))
+        _log.debug("determined (crop adjusted) height:%d, width :%d" % \
+                        (oheight, owidth))
+
+        try:
+            if self.info.videocaps[0].has_key("pixel-aspect-ratio"):
+                owidth = int(owidth * float(self.info.videocaps[0]["pixel-aspect-ratio"]))
+        except KeyError:
+            # The videocaps we are looking for may not even exist, just ignore
+            pass
             
-            owidth = self.info.videowidth - crop[1] - crop[3]
-            oheight = self.info.videoheight - crop[0] - crop[2]
+        width, height = owidth, oheight
+        # =================================================================
+        # Modifiying height and width with user supplied values. (Hansraj)
+        # =================================================================
+        """
+        if self.options.width is not None:
+            if self.options.is_absolute_value:
+                width = self.options.width
+            else:
+                width = (owidth * self.options.width/100)
+        if self.options.height is not None:
+            if self.options.is_absolute_value:
+                height = self.options.height
+            else:
+                height = (oheight * self.options.height/100)
+        """
+        # Scale width / height to fit requested min/max
+        if width < wmin:
+            width = wmin
+            height = int((float(wmin) / owidth) * oheight)
+        elif width > wmax:
+            width = wmax
+            height = int((float(wmax) / owidth) * oheight)
             
-            try:
-                if self.info.videocaps[0].has_key("pixel-aspect-ratio"):
-                    owidth = int(owidth * float(self.info.videocaps[0]["pixel-aspect-ratio"]))
-            except KeyError:
-                # The videocaps we are looking for may not even exist, just ignore
-                pass
+        if height < hmin:
+            height = hmin
+            width = int((float(hmin) / oheight) * owidth)
+        elif height > hmax:
+            height = hmax
+            width = int((float(hmax) / oheight) * owidth)
+
+        # Add any required padding
+        # TODO: Remove the extra colorspace conversion when no longer
+        #       needed, but currently xvidenc and possibly others will fail
+        #       without it!
+        vbox = ""
+        if width < wmin and height < hmin:
+            wpx = (wmin - width) / 2
+            hpx = (hmin - height) / 2
+            vbox = "videobox left=%i right=%i top=%i bottom=%i ! ffmpegcolorspace ! " % \
+                   (-wpx, -wpx, -hpx, -hpx)
+        elif width < wmin:
+            px = (wmin - width) / 2
+            vbox = "videobox left=%i right=%i ! ffmpegcolorspace ! " % \
+                   (-px, -px)
+        elif height < hmin:
+            px = (hmin - height) / 2
+            vbox = "videobox top=%i bottom=%i ! ffmpegcolorspace ! " % \
+                   (-px, -px)
+        
+        # FIXME Odd widths / heights seem to freeze gstreamer
+        if width % 2:
+            width += 1
+        if height % 2:
+            height += 1
+         
+        for vcap in self.vcaps:
+            vcap["width"] = width
+            vcap["height"] = height
+
+        return vcrop, vbox
+         
+    def _setup_video_framerate(self):
+        # =================================================================
+        # Setup video framerate 
+        # =================================================================
+
+        num = self.info.videorate.num
+        denom = self.info.videorate.denom
+
+        if self.options.frame_rate is not None:
+            if self.options.is_absolute_value:
+                num = self.options.frame_rate
+                denom = 1 #Considering the the denom to 1
+            else:
+                num = round(num * self.options.frame_rate/100)
+                denom = round(denom * self.options.frame_rate/100) or 1
+
+        rmin = self.preset.vcodec.rate[0].num / \
+                   float(self.preset.vcodec.rate[0].denom)
+        rmax = self.preset.vcodec.rate[1].num / \
+                   float(self.preset.vcodec.rate[1].denom)
+        orate = num / float(denom)
             
-            width, height = owidth, oheight
+        if orate > rmax:
+            num = self.preset.vcodec.rate[1].num
+            denom = self.preset.vcodec.rate[1].denom
+        elif orate < rmin:
+            num = self.preset.vcodec.rate[0].num
+            denom = self.preset.vcodec.rate[0].denom
+
+        return num, denom    
+
+    def _update_preset_to_aencoder_limits(self):
+
+        # =================================================================
+        # Update limits based on what the encoder really supports
+        # =================================================================
+        if self.info.is_audio:
+            element = gst.element_factory_make(self.preset.acodec.name,
+                                               "aencoder")
             
-            # Scale width / height to fit requested min/max
-            if owidth < wmin:
-                width = wmin
-                height = int((float(wmin) / owidth) * oheight)
-            elif owidth > wmax:
-                width = wmax
-                height = int((float(wmax) / owidth) * oheight)
+            fields = {}
+            for cap in element.get_pad("sink").get_caps():
+                for field in ["width", "depth", "rate", "channels"]:
+                    if cap.has_field(field):
+                        if field not in fields:
+                            fields[field] = [0, 0]
+                        value = cap[field]
+                        if isinstance(value, gst.IntRange):
+                            vmin, vmax = value.low, value.high
+                        else:
+                            vmin, vmax = value, value
+                        
+                        if vmin < fields[field][0]:
+                            fields[field][0] = vmin
+                        if vmax > fields[field][1]:
+                            fields[field][1] = vmax
             
-            if height < hmin:
-                height = hmin
-                width = int((float(hmin) / oheight) * owidth)
-            elif height > hmax:
-                height = hmax
-                width = int((float(hmax) / oheight) * owidth)
+            for name, (amin, amax) in fields.items():
+                cur = getattr(self.preset.acodec, field)
+                if cur[0] < amin:
+                    cur = (amin, cur[1])
+                    setattr(self.preset.acodec, field, cur)
+                if cur[1] > amax:
+                    cur = (cur[0], amax)
+                    setattr(self.preset.acodec, field, cur)
             
-            # Add any required padding
-            # TODO: Remove the extra colorspace conversion when no longer
-            #       needed, but currently xvidenc and possibly others will fail
-            #       without it!
-            vbox = ""
-            if width < wmin and height < hmin:
-                wpx = (wmin - width) / 2
-                hpx = (hmin - height) / 2
-                vbox = "videobox left=%i right=%i top=%i bottom=%i ! ffmpegcolorspace ! " % \
-                       (-wpx, -wpx, -hpx, -hpx)
-            elif width < wmin:
-                px = (wmin - width) / 2
-                vbox = "videobox left=%i right=%i ! ffmpegcolorspace ! " % \
-                       (-px, -px)
-            elif height < hmin:
-                px = (hmin - height) / 2
-                vbox = "videobox top=%i bottom=%i ! ffmpegcolorspace ! " % \
-                       (-px, -px)
+    def _get_video_bitrate(self):
+        filesize = 0
+        oabitrate = 0
+        try:
+            filesize = os.path.getsize( os.path.abspath(self.infile) )
+        except:
+            _log.debug(_("Error reading FILESIZE for %(filename)s") % { "filename": self.options.uri})
+
+        # FIXME: Currently the audio bitrate value obtained is unreliable, so not using it for the calculation.
+        # Uncomment the 2 lines below to use the value.
+        #if self.info.tags.has_key("bitrate"):
+        #     oabitrate = self.info.tags["bitrate"]
+
+        # Using formula as : Video bitrate (Kb/s) = Filesize (Kb) / length (sec) - (audio-bitrate)
+        return (filesize/(self.info.videolength/gst.SECOND) - oabitrate )/1000
+        
+
+    def _set_video_bitrate(self):
+        if self.options.is_absolute_value:
+            return self.options.video_bitrate
+        else:
+            ovbitrate = self._get_video_bitrate()
+            if ovbitrate > 0:
+                return (ovbitrate * self.options.video_bitrate/100)
+
+    def _setup_subtitles_from_file(self, cmd):
+        sub = ""
+        if self.options.subfile:
+            charset = ""
+            if self.options.subfile_charset:
+                charset = "subtitle-encoding=\"%s\"" % \
+                        self.options.subfile_charset
+                
+            # Render subtitles onto the video stream
+            sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
+                "font": self.options.font,
+            }
+            cmd += " filesrc location=\"%(subfile)s\" ! subparse " \
+                    "%(subfile_charset)s ! txt." % {
+                "subfile": self.options.subfile,
+                "subfile_charset": charset,
+            }
+
+        if self.options.ssa is True:             
+            # Render subtitles onto the video stream
+            sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
+                    "font": self.options.font,
+            }
+            cmd += " filesrc location=\"%(infile)s\" ! matroskademux name=demux ! ssaparse ! txt. " % {
+                "infile": self.infile,
+            }
+
+        return cmd, sub
             
-            # FIXME Odd widths / heights seem to freeze gstreamer
-            if width % 2:
-                width += 1
-            if height % 2:
-                height += 1
+
+    def _get_watermark_text(self):
+        overlay = ""
+        if self.options.text_overlay:
+            overlay = "! textoverlay font-desc=\"%s\" text=\"%s\" " % \
+                    (self.options.font, self.options.text_overlay)
+
+        return overlay
+
             
-            for vcap in self.vcaps:
-                vcap["width"] = width
-                vcap["height"] = height
+    def _setup_pass(self):
+        """
+            Setup the pipeline for an encoding pass. This configures the
+            GStreamer elements and their setttings for a particular pass.
+        """
+        # Get limits and setup caps
+        self.vcaps = gst.Caps()
+        self.vcaps.append_structure(gst.Structure("video/x-raw-yuv"))
+        self.vcaps.append_structure(gst.Structure("video/x-raw-rgb"))
+        
+        self.acaps = gst.Caps()
+        self.acaps.append_structure(gst.Structure("audio/x-raw-int"))
+        self.acaps.append_structure(gst.Structure("audio/x-raw-float"))
+        
+        # =====================================================================
+        # Setup video, audio/video, or audio transcode pipeline
+        # =====================================================================
+        
+        # Figure out which mux element to use
+        container = self._get_container()
+
+        mux_str = ""
+        if container:
+            mux_str = "%s name=mux ! queue !" % container
+        
+        # Decide whether or not we are using a muxer and link to it or just
+        # the file sink if we aren't (for e.g. mp3 audio)
+        if mux_str:
+            premux = "mux."
+        else:
+            premux = "sink."
+        
+        uridecode_str = self._get_source()
+        
+        mux_str = "%s filesink name=sink " \
+                  "location=\"%s\"" % (mux_str, self.options.output_uri)
+        
+        video_str = ""    
+        if self.info.is_video and self.preset.vcodec:
+            # Ensure that preset limits fall within 'actual encoder limits'
+            self._update_preset_to_vencoder_limits()
+
+            # Validate the height and width to preset
+            vcrop,vbox = self._validate_and_update_resolution()
             
             # =================================================================
             # Setup video framerate and add to caps

@@ -152,6 +152,9 @@ class Discoverer(gst.Pipeline):
             pass
         elif filename.startswith("file://"):
             pass
+        elif filename.startswith("http://") or \
+            filename.startswith("https://"):
+            pass
         else:
             # uridecodebin fails to properly decode some files because it only
             # uses decodebin2 functionality.
@@ -168,7 +171,7 @@ class Discoverer(gst.Pipeline):
             self.typefind = self.dbin.get_by_name("typefind")
             self.typefind.connect("have-type", self._have_type_cb)
             
-            self.dbin.connect("new-decoded-pad", self._new_decoded_pad_cb)
+            self.dbin.connect("pad-added", self._new_decoded_pad_cb)
             self.dbin.connect("no-more-pads", self._no_more_pads_cb)
         else:
             # No custom source was setup, so let's use the uridecodebin!
@@ -250,8 +253,8 @@ class Discoverer(gst.Pipeline):
         self.bus.add_signal_watch()
         self.bus.connect("message", self._bus_message_cb)
 
-        # 3s timeout
-        self._timeoutid = gobject.timeout_add(3000, self._timed_out_or_eos)
+        # Changed the timeout to 30s for http sources
+        self._timeoutid = gobject.timeout_add(30000, self._timed_out_or_eos)
         
         self.info("setting to PLAY")
         if not self.set_state(gst.STATE_PLAYING):

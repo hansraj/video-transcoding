@@ -468,10 +468,6 @@ class Transcoder(gobject.GObject):
                 denom = round(denom * self.options.framerate/100) or 1
 
         _log.debug("Framerate before Preset Comparison: %d/%d" % (num, denom))
-        print self.preset.vcodec.rate[0].num,
-        print self.preset.vcodec.rate[0].denom
-        print self.preset.vcodec.rate[1].num,
-        print self.preset.vcodec.rate[1].denom
         rmin = self.preset.vcodec.rate[0].num / \
                    float(self.preset.vcodec.rate[0].denom)
         rmax = self.preset.vcodec.rate[1].num / \
@@ -537,11 +533,18 @@ class Transcoder(gobject.GObject):
         #     oabitrate = self.info.tags["bitrate"]
 
         # Using formula as : Video bitrate (Kb/s) = Filesize (Kb) / length (sec) - (audio-bitrate)
-        return (filesize/(self.info.videolength/gst.SECOND) - oabitrate )/1000
+        # FIXME : is it kbps
+        #return (filesize/(self.info.videolength/gst.SECOND) - oabitrate)
         
+        # calculating in kbps for H.264. Note vp8enc requires it in bits per second 
+        fsize_bits = filesize * 8 
+        fsize_bps = fsize_bits/(self.info.videolength/gst.SECOND) 
+        fsize_kbps = fsize_bps/1000
+        return fsize_kbps
+
 
     def _set_video_bitrate(self):
-        if self.options.is_absolute_value:
+        if self.options.absolute:
             return self.options.video_bitrate
         else:
             ovbitrate = self._get_video_bitrate()
@@ -642,27 +645,8 @@ class Transcoder(gobject.GObject):
             # =================================================================
             # Properly handle and pass through pixel aspect ratio information
             # =================================================================
-            for x in range(self.info.videocaps.get_size()):
-                struct = self.info.videocaps[x]
-                if struct.has_field("pixel-aspect-ratio"):
-                    # There was a bug in xvidenc that flipped the fraction
-                    # Fixed in svn on 12 March 2008
-                    # We need to flip the fraction on older releases!
-                    par = struct["pixel-aspect-ratio"]
-                    if self.preset.vcodec.name == "xvidenc":
-                        for p in gst.registry_get_default().get_plugin_list():
-                            if p.get_name() == "xvid":
-                                if p.get_version() <= "0.10.6":
-                                    par.num, par.denom = par.denom, par.num
-                    for vcap in self.vcaps:
-                        vcap["pixel-aspect-ratio"] = par
-                    break
-            
-            # FIXME a bunch of stuff doesn't seem to like pixel aspect ratios
-            # Just force everything to go to 1:1 for now...
-            for vcap in self.vcaps:
-                vcap["pixel-aspect-ratio"] = gst.Fraction(1, 1)
-            
+            self._setup_pixel_aspect_ratio() 
+
             # =================================================================
             # Setup the video encoder and options
             # =================================================================
@@ -671,6 +655,13 @@ class Transcoder(gobject.GObject):
                                     "threads": self.cpu_count,
                                   })
             
+            # FIXME : Not sure whether this is right
+            # FIXME : vp8enc requires the parameter as 'target-bitrate' and requires it in
+            # bps, while x264 requires it in kbps. In generatl this handling should be 
+            # much better than what it is
+            if self.options.video_bitrate:
+                vencoder += " bitrate={0}".format(self._set_video_bitrate())
+
             deint = ""
             if self.options.deinterlace:
                 deint = " ffdeinterlace ! "

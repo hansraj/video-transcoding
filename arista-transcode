@@ -233,7 +233,7 @@ if __name__ == "__main__":
     parser.add_option("--framerate", dest = "framerate",
                       default=None, nargs=1, type=int,
                       help = _("Set framerate/(frames per sec) for the output video"))
-    parser.add_option("--bitrate", dest = "bitrate",
+    parser.add_option("--video-bitrate", dest = "video_bitrate",
                       default=None, nargs=1, type=int,
                       help = _("Set bitrate for the output video"))
     parser.add_option("--absolute", dest = "absolute",
@@ -268,7 +268,7 @@ if __name__ == "__main__":
         gettext.bind_textdomain_codeset("arista", "UTF-8")
     if hasattr(locale, "bind_textdomain_codeset"):
         locale.bind_textdomain_codeset("arista", "UTF-8")
-    
+   
     if hasattr(gettext, "textdomain"):
         gettext.textdomain("arista")
     if hasattr(locale, "textdomain"):
@@ -433,6 +433,7 @@ if __name__ == "__main__":
                                      height = options.height,
                                      width = options.width,
                                      framerate = options.framerate,
+                                     video_bitrate = options.video_bitrate,
                                      absolute = options.absolute)
 
             queue.append(opts)

@@ -401,19 +401,20 @@ class Transcoder(gobject.GObject):
         # Modifiying height and width with user supplied values. (Hansraj)
         # =================================================================
         # Scale width / height to fit requested min/max
+        # FIXME : Why the scaling below is required. Need to check
         if width < wmin:
             width = wmin
-            height = int((float(wmin) / owidth) * oheight)
+            #height = int((float(wmin) / owidth) * oheight)
         elif width > wmax:
             width = wmax
-            height = int((float(wmax) / owidth) * oheight)
+            #height = int((float(wmax) / owidth) * oheight)
             
         if height < hmin:
             height = hmin
-            width = int((float(hmin) / oheight) * owidth)
+            #width = int((float(hmin) / oheight) * owidth)
         elif height > hmax:
             height = hmax
-            width = int((float(hmax) / oheight) * owidth)
+            #width = int((float(hmax) / oheight) * owidth)
 
         # Add any required padding
         # TODO: Remove the extra colorspace conversion when no longer

@@ -17,7 +17,16 @@ presets = [["-p", "xvid", "-d", "xvid"], [], ["-p", "Theora"]]
 extensions = ['mp4', 'webm', 'mkv']
 
 DEFAULT_RUNS = 10
-num_runs = int(sys.argv[1]) if len(sys.argv) == 2 else DEFAULT_RUNS 
+num_runs = int(sys.argv[1]) if len(sys.argv) >= 2 else DEFAULT_RUNS 
+
+test_files_dir = sys.argv[2] if len(sys.argv) == 3 else "." 
+
+testfiles = []
+for dirpath, dirname, filenames in os.walk(test_files_dir):
+    print dirpath, filenames
+    for filename in filenames:
+        testfile_name = "%s" % os.path.abspath(os.path.join(dirpath, filename))
+        testfiles.append(testfile_name)
 
 datestamp = dt.now().strftime("%Y%m%d")
 datestamp_dir = "/tmp/%s" % datestamp
@@ -67,7 +76,8 @@ while run < num_runs:
         options_str += "-b%d" % video_bitrate
 
     # Determine input/output values
-    input = "/home/xvid/sintel_trailer-480p.ogv"
+    in_offset = random.randint(0, len(testfiles)-1)
+    input = testfiles[in_offset]
     output, ext = os.path.splitext(input) 
     outfile = output.split("/")[-1]
     outfile = "%s-%s-%s%s-%d.%s" % (outfile, start, stop, options_str, \

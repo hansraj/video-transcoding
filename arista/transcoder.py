@@ -262,7 +262,6 @@ class Transcoder(gobject.GObject):
             
         return "uridecodebin uri=\"%s\" name=uridecode" % filename
     
-    # From Hansraj's code
     def _get_container(self):
         container = None
         if self.info.is_video and self.info.is_audio:
@@ -345,7 +344,6 @@ class Transcoder(gobject.GObject):
         input_width = self.info.videowidth
         input_height = self.info.videoheight
 
-        # FIXME : We assume the height and width are already validated
         if self.options.height is not None: # user specified height
             if self.options.absolute:
                 output_height = self.options.height
@@ -369,19 +367,21 @@ class Transcoder(gobject.GObject):
             vcrop = "videocrop top=%i right=%i bottom=%i left=%i ! "  % \
                      (crop[0], crop[1], crop[2], crop[3])
 
-        wmin, wmax = self.preset.vcodec.width
-        hmin, hmax = self.preset.vcodec.height
-            
         owidth = output_width - crop[1] - crop[3]
         oheight = output_height - crop[0] - crop[2]
        
+        wmin, wmax = self.preset.vcodec.width
+        hmin, hmax = self.preset.vcodec.height
+            
         rel_or_abs = "(relative)" if not self.options.absolute else ""
         _log.debug("video input::height: %d, width : %d" % \
                         (input_height, input_width))
-        if self.options.height is not None and \
-            self.options.width is not None:
-            _log.debug("user input::height: %d, width : %d %s" % \
-                        (self.options.height, self.options.width, rel_or_abs))
+        if self.options.height is not None:
+            _log.debug("user input::height: %d %s" % \
+                        (self.options.height, rel_or_abs))
+        if self.options.width is not None:
+            _log.debug("user input::width: %d %s" % \
+                        (self.options.width, rel_or_abs))
         
         _log.debug("crop::top:%d, right:%d,bottom:%d, left:%d"  % \
                     tuple(crop))
@@ -395,22 +395,11 @@ class Transcoder(gobject.GObject):
             # The videocaps we are looking for may not even exist, just ignore
             pass
             
+
         width, height = owidth, oheight
         # =================================================================
         # Modifiying height and width with user supplied values. (Hansraj)
         # =================================================================
-        """
-        if self.options.width is not None:
-            if self.options.absolute_value:
-                width = self.options.width
-            else:
-                width = (owidth * self.options.width/100)
-        if self.options.height is not None:
-            if self.options.absolute_value:
-                height = self.options.height
-            else:
-                height = (oheight * self.options.height/100)
-        """
         # Scale width / height to fit requested min/max
         if width < wmin:
             width = wmin
@@ -451,6 +440,9 @@ class Transcoder(gobject.GObject):
         if height % 2:
             height += 1
          
+        _log.debug("determined (preset adjusted) height:%d, width :%d" % \
+                        (height, width))
+
         for vcap in self.vcaps:
             vcap["width"] = width
             vcap["height"] = height
@@ -462,6 +454,7 @@ class Transcoder(gobject.GObject):
         # Setup video framerate 
         # =================================================================
 
+        # FIXME : Not working for webm yet
         num = self.info.videorate.num
         denom = self.info.videorate.denom
 
@@ -491,7 +484,6 @@ class Transcoder(gobject.GObject):
         return num, denom    
 
     def _update_preset_to_aencoder_limits(self):
-
         # =================================================================
         # Update limits based on what the encoder really supports
         # =================================================================
@@ -591,7 +583,6 @@ class Transcoder(gobject.GObject):
             _log.debug(_("Subtitles not supported in combination with seeking."))
         
         return cmd, sub
-            
 
     def _get_watermark_text(self):
         overlay = ""
@@ -601,7 +592,6 @@ class Transcoder(gobject.GObject):
 
         return overlay
 
-            
     def _setup_pass(self):
         """
             Setup the pipeline for an encoding pass. This configures the

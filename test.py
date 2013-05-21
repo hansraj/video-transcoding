@@ -1,6 +1,8 @@
+#!/usr/bin/env python
 """
-A simple test script to run with randomly selected seeks.
-Note : we know the length of the input file for which we are doing seek.
+A simple test script to run with randomly selected options. Only relative
+options are supported right now (good enough for phase 1).
+Takes number of runs as command line option. Default is 10
 """
 
 import subprocess
@@ -25,21 +27,56 @@ if not os.path.exists(datestamp_dir):
 run = 0
 while run < num_runs:
     offset = random.randint(0,len(presets)-1)
-    start = random.randint(1,50)
-    stop = random.randint(1,50)
+
+    # FIXME : Doesn't support absolute options
+    # Take random start/stop values (relative - as percentages)
+    start = random.randint(1,100)
+    stop = random.randint(1,100)
     if start > stop:
         stop = -1
     start = str(start)
     stop = str(stop)
+
+    # Height, Width, Framerate, Video Bitrate 
+    toggle_ht = random.randint(0,1)
+    if toggle_ht:
+        height = random.randint(40,100)
+    toggle_width = random.randint(0,1)
+    if toggle_width:
+        width = random.randint(40,100)
+    toggle_frate = random.randint(0,1)
+    if toggle_frate:
+        frame_rate = random.randint(20,100)
+    toggle_vbrate = random.randint(0,1)
+    if toggle_vbrate:
+        video_bitrate = random.randint(40,100)
+
+    options = []
+    options_str = ""
+    if toggle_ht:
+        options += ["--height", str(height)]
+        options_str += "-h%d" % height
+    if toggle_width:
+        options += ["--width", str(width)]
+        options_str += "-w%d" % width
+    if toggle_frate:
+        options += ["--framerate", str(frame_rate)]
+        options_str += "-f%d" % frame_rate
+    if toggle_vbrate:
+        options += ["--video-bitrate", str(video_bitrate)]
+        options_str += "-b%d" % video_bitrate
+
+    # Determine input/output values
     input = "/home/xvid/sintel_trailer-480p.ogv"
     output, ext = os.path.splitext(input) 
     outfile = output.split("/")[-1]
-    outfile = "%s-%s-%s.%s" % (outfile, start, stop, extensions[offset])
+    outfile = "%s-%s-%s%s-%d.%s" % (outfile, start, stop, options_str, \
+                                    run, extensions[offset])
     output = os.path.join("/tmp", datestamp, outfile)
-    print input, output, start, stop
+
     subprocess_array = ["./arista-transcode"] + presets[offset] + \
                         [input, "-o", output, "--start-time", start, \
-                         "--stop-time", stop]
+                         "--stop-time", stop] + options
     print (" ").join(subprocess_array)
     x = subprocess.call(subprocess_array)
     time.sleep(2)

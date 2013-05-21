@@ -846,7 +846,7 @@ class Transcoder(gobject.GObject):
 
     def _do_seek(self, elem):
         start, stop = self.options.start_time, self.options.stop_time
-        
+
         if start < 0 or stop < -1:
             _log.debug("Start(%d) or Stop(%d) time is invalid" % \
                         (start, stop))
@@ -861,6 +861,17 @@ class Transcoder(gobject.GObject):
             stop_seek_type = gst.SEEK_TYPE_NONE
         else:
             stop_seek_type = gst.SEEK_TYPE_SET
+        
+        # support for relative seek
+        if not self.options.absolute:
+            if start > 100.0 or stop > 100.0:
+                _log.debug("Relative Duration and start/stop are > 100")
+                return False
+            duration = max(self.info.videolength, self.info.audiolength)
+            duration = duration / gst.SECOND
+            if stop != -1:
+                stop = duration * stop / 100.0 
+            start = duration * start / 100.0
 
         seek_flags = gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE
 

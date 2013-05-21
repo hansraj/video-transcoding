@@ -278,32 +278,38 @@ class Transcoder(gobject.GObject):
         return container
     
     def _update_preset_to_vencoder_limits(self):
-        if self.info.is_video and self.preset.vcodec:
-            # =================================================================
-            # Update limits based on what the encoder really supports
-            # =================================================================
-            element = gst.element_factory_make(self.preset.vcodec.name,
-                                               "vencoder")
-            
-            # TODO: Add rate limits based on encoder sink below
-            for cap in element.get_pad("sink").get_caps():
-                for field in ["width", "height"]:
-                    if cap.has_field(field):
-                        value = cap[field]
-                        if isinstance(value, gst.IntRange):
-                            vmin, vmax = value.low, value.high
-                        else:
-                            vmin, vmax = value, value
-                        
-                        cur = getattr(self.preset.vcodec, field)
-                        if cur[0] < vmin:
-                            cur = (vmin, cur[1])
-                            setattr(self.preset.vcodec, field, cur)
-                    
-                        if cur[1] > vmax:
-                            cur = (cur[0], vmax)
-                            setattr(self.preset.vcodec, field, cur)
+        if not self.info.is_video:
+            _log.debug("Videotrack Not present. We shouldn't Come here. BUG()")
+            return
 
+        if not self.preset.vcodec:
+            _log.debug("No Videocodec defined in Preset. We shouldn't come" \
+                       " here. BUG()")
+            return 
+
+        # =================================================================
+        # Update limits based on what the encoder really supports
+        # =================================================================
+        element = gst.element_factory_make(self.preset.vcodec.name, "vencoder")
+            
+        # TODO: Add rate limits based on encoder sink below
+        for cap in element.get_pad("sink").get_caps():
+            for field in ["width", "height"]:
+                if cap.has_field(field):
+                    value = cap[field]
+                    if isinstance(value, gst.IntRange):
+                        vmin, vmax = value.low, value.high
+                    else:
+                        vmin, vmax = value, value
+                    
+                    cur = getattr(self.preset.vcodec, field)
+                    if cur[0] < vmin:
+                        cur = (vmin, cur[1])
+                        setattr(self.preset.vcodec, field, cur)
+                
+                    if cur[1] > vmax:
+                        cur = (cur[0], vmax)
+                        setattr(self.preset.vcodec, field, cur)
 
     def _setup_pixel_aspect_ratio(self):
         # =================================================================
@@ -489,36 +495,37 @@ class Transcoder(gobject.GObject):
         # =================================================================
         # Update limits based on what the encoder really supports
         # =================================================================
-        if self.info.is_audio:
-            element = gst.element_factory_make(self.preset.acodec.name,
-                                               "aencoder")
+        if not self.info.is_audio:
+            _log.debug("There's no audio track. This part should not be called" \
+                        "BUG()")
+        element = gst.element_factory_make(self.preset.acodec.name, "aencoder")
             
-            fields = {}
-            for cap in element.get_pad("sink").get_caps():
-                for field in ["width", "depth", "rate", "channels"]:
-                    if cap.has_field(field):
-                        if field not in fields:
-                            fields[field] = [0, 0]
-                        value = cap[field]
-                        if isinstance(value, gst.IntRange):
-                            vmin, vmax = value.low, value.high
-                        else:
-                            vmin, vmax = value, value
-                        
-                        if vmin < fields[field][0]:
-                            fields[field][0] = vmin
-                        if vmax > fields[field][1]:
-                            fields[field][1] = vmax
-            
-            for name, (amin, amax) in fields.items():
-                cur = getattr(self.preset.acodec, field)
-                if cur[0] < amin:
-                    cur = (amin, cur[1])
-                    setattr(self.preset.acodec, field, cur)
-                if cur[1] > amax:
-                    cur = (cur[0], amax)
-                    setattr(self.preset.acodec, field, cur)
-            
+        fields = {}
+        for cap in element.get_pad("sink").get_caps():
+            for field in ["width", "depth", "rate", "channels"]:
+                if cap.has_field(field):
+                    if field not in fields:
+                        fields[field] = [0, 0]
+                    value = cap[field]
+                    if isinstance(value, gst.IntRange):
+                        vmin, vmax = value.low, value.high
+                    else:
+                        vmin, vmax = value, value
+                    
+                    if vmin < fields[field][0]:
+                        fields[field][0] = vmin
+                    if vmax > fields[field][1]:
+                        fields[field][1] = vmax
+        
+        for name, (amin, amax) in fields.items():
+            cur = getattr(self.preset.acodec, field)
+            if cur[0] < amin:
+                cur = (amin, cur[1])
+                setattr(self.preset.acodec, field, cur)
+            if cur[1] > amax:
+                cur = (cur[0], amax)
+                setattr(self.preset.acodec, field, cur)
+        
     def _get_video_bitrate(self):
         filesize = 0
         oabitrate = 0
@@ -551,33 +558,38 @@ class Transcoder(gobject.GObject):
             if ovbitrate > 0:
                 return (ovbitrate * self.options.video_bitrate/100)
 
-    def _setup_subtitles_from_file(self, cmd):
+    def _setup_subtitles_from_file(self):
         sub = ""
-        if self.options.subfile:
+        cmd = ""
+        if self.options.subfile and self.options.start_time == 0:
             charset = ""
             if self.options.subfile_charset:
                 charset = "subtitle-encoding=\"%s\"" % \
-                        self.options.subfile_charset
-                
+                                            self.options.subfile_charset
+            
             # Render subtitles onto the video stream
             sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
                 "font": self.options.font,
             }
             cmd += " filesrc location=\"%(subfile)s\" ! subparse " \
-                    "%(subfile_charset)s ! txt." % {
-                "subfile": self.options.subfile,
-                "subfile_charset": charset,
+                         "%(subfile_charset)s ! txt." % {
+                         "subfile": self.options.subfile,
+                         "subfile_charset": charset,
             }
+        elif self.options.subfile:
+            _log.debug(_("Subtitles not supported in combination with seeking."))
 
-        if self.options.ssa is True:             
+        if self.options.ssa is True and self.options.start_time == 0:             
             # Render subtitles onto the video stream
             sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
-                    "font": self.options.font,
+                "font": self.options.font,
             }
             cmd += " filesrc location=\"%(infile)s\" ! matroskademux name=demux ! ssaparse ! txt. " % {
                 "infile": self.infile,
             }
-
+        elif self.options.ssa is True:
+            _log.debug(_("Subtitles not supported in combination with seeking."))
+        
         return cmd, sub
             
 
@@ -655,10 +667,9 @@ class Transcoder(gobject.GObject):
                                     "threads": self.cpu_count,
                                   })
             
-            # FIXME : Not sure whether this is right
-            # FIXME : vp8enc requires the parameter as 'target-bitrate' and requires it in
-            # bps, while x264 requires it in kbps. In generatl this handling should be 
-            # much better than what it is
+            # FIXME : vp8enc requires the parameter as 'target-bitrate' and 
+            # requires it in bps, while x264 requires it in kbps. In general 
+            # this handling should be much better than what it is
             if self.options.video_bitrate:
                 vencoder += " bitrate={0}".format(self._set_video_bitrate())
 
@@ -670,41 +681,10 @@ class Transcoder(gobject.GObject):
             if self.preset.vcodec.transform:
                 transform = self.preset.vcodec.transform + " ! "
             
-            sub = ""
-            if self.options.subfile and self.options.start_time == 0:
-                charset = ""
-                if self.options.subfile_charset:
-                    charset = "subtitle-encoding=\"%s\"" % \
-                                                self.options.subfile_charset
-                
-                # Render subtitles onto the video stream
-                sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
-                    "font": self.options.font,
-                }
-                video_str += " filesrc location=\"%(subfile)s\" ! subparse " \
-                             "%(subfile_charset)s ! txt." % {
-                             "subfile": self.options.subfile,
-                             "subfile_charset": charset,
-                }
-            elif self.options.subfile:
-                _log.debug(_("Subtitles not supported in combination with seeking."))
+            # FIXME : Not merged subtitles handling from Hansraj's code yet
+            cmd, sub = self._setup_subtitles_from_file()
+            video_str += cmd
 
-            if self.options.ssa is True and self.options.start_time == 0:             
-                # Render subtitles onto the video stream
-                sub = "textoverlay font-desc=\"%(font)s\" name=txt ! " % {
-                    "font": self.options.font,
-                }
-                video_str += " filesrc location=\"%(infile)s\" ! matroskademux name=demux ! ssaparse ! txt. " % {
-                    "infile": self.infile,
-                }
-            elif self.options.ssa is True:
-                _log.debug(_("Subtitles not supported in combination with seeking."))
-            
-            vmux = premux
-            if container in ["qtmux", "webmmux", "ffmux_dvd", "matroskamux"]:
-                if premux.startswith("mux"):
-                    vmux += "video_%d"
-            
             video_str += " queue name=q_dec_venc_%d " + " ! ffmpegcolorspace ! videorate !" \
                    "%s %s %s %s videoscale ! %s ! %s%s ! tee " \
                    "name=videotee" % \
@@ -712,43 +692,17 @@ class Transcoder(gobject.GObject):
                     vencoder)
             video_str += " ! queue name=q_venc_mux_%d "
 
-        _log.debug(video_str)
+            _log.debug(video_str)
 
+        # Handle the audio part here. Note we deal with audio only for the last
+        # pass
         audio_str = "" 
         if self.info.is_audio and self.preset.acodec and \
            self.enc_pass == len(self.preset.vcodec.passes) - 1:
             # =================================================================
             # Update limits based on what the encoder really supports
             # =================================================================
-            element = gst.element_factory_make(self.preset.acodec.name,
-                                               "aencoder")
-            
-            fields = {}
-            for cap in element.get_pad("sink").get_caps():
-                for field in ["width", "depth", "rate", "channels"]:
-                    if cap.has_field(field):
-                        if field not in fields:
-                            fields[field] = [0, 0]
-                        value = cap[field]
-                        if isinstance(value, gst.IntRange):
-                            vmin, vmax = value.low, value.high
-                        else:
-                            vmin, vmax = value, value
-                        
-                        if vmin < fields[field][0]:
-                            fields[field][0] = vmin
-                        if vmax > fields[field][1]:
-                            fields[field][1] = vmax
-            
-            for name, (amin, amax) in fields.items():
-                cur = getattr(self.preset.acodec, field)
-                if cur[0] < amin:
-                    cur = (amin, cur[1])
-                    setattr(self.preset.acodec, field, cur)
-                if cur[1] > amax:
-                    cur = (cur[0], amax)
-                    setattr(self.preset.acodec, field, cur)
-            
+            self._update_preset_to_aencoder_limits() 
             # =================================================================
             # Prepare audio capabilities
             # =================================================================
@@ -773,17 +727,14 @@ class Transcoder(gobject.GObject):
                             "threads": self.cpu_count,
                        }
             
-            amux = premux
-            if container in ["qtmux", "webmmux", "ffmux_dvd", "matroskamux"]:
-                if premux.startswith("mux"):
-                    amux += "audio_%d"
-            
             audio_str += " queue name=q_dec_aenc_%d" + " ! audioconvert ! " \
                          "audiorate tolerance=100000000 ! " \
                          "audioresample ! %s ! %s " % \
                          (self.acaps.to_string(), aencoder)
             audio_str += " ! queue name=q_aenc_mux_%d"
-        
+
+            _log.debug(audio_str) 
+
         # =====================================================================
         # Build the pipeline and get ready!
         # =====================================================================

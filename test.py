@@ -23,7 +23,6 @@ test_files_dir = sys.argv[2] if len(sys.argv) == 3 else "."
 
 testfiles = []
 for dirpath, dirname, filenames in os.walk(test_files_dir):
-    print dirpath, filenames
     for filename in filenames:
         testfile_name = "%s" % os.path.abspath(os.path.join(dirpath, filename))
         testfiles.append(testfile_name)

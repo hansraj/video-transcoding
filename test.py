@@ -21,12 +21,18 @@ num_runs = int(sys.argv[1]) if len(sys.argv) >= 2 else DEFAULT_RUNS
 
 test_files_dir = sys.argv[2] if len(sys.argv) == 3 else "." 
 
+
+valid_extensions = ['ogv', 'webm', 'mp4', 'mkv', 'avi', 'wms']
 testfiles = []
 for dirpath, dirname, filenames in os.walk(test_files_dir):
     for filename in filenames:
         testfile_name = "%s" % os.path.abspath(os.path.join(dirpath, filename))
-        testfiles.append(testfile_name)
+        base_file, extension = os.path.splitext(testfile_name)
+        extension = extension.split(".")[-1].lower()
+        if extension in valid_extensions:
+            testfiles.append(testfile_name)
 
+print testfiles
 datestamp = dt.now().strftime("%Y%m%d")
 datestamp_dir = "/tmp/%s" % datestamp
 if not os.path.exists(datestamp_dir):

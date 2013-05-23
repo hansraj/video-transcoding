@@ -599,6 +599,7 @@ class Transcoder(gobject.GObject):
             GStreamer elements and their setttings for a particular pass.
         """
         # Get limits and setup caps
+        print "setup_pass"
         self.vcaps = gst.Caps()
         self.vcaps.append_structure(gst.Structure("video/x-raw-yuv"))
         self.vcaps.append_structure(gst.Structure("video/x-raw-rgb"))
@@ -758,7 +759,8 @@ class Transcoder(gobject.GObject):
         except gobject.GError, e:
             raise PipelineException(_("Unable to construct pipeline! ") + \
                                     str(e))
-        
+        print "_buildpipeline" 
+
         bus = self.pipe.get_bus()
         bus.add_signal_watch()
         bus.connect("message", self._on_message)
@@ -945,6 +947,7 @@ class Transcoder(gobject.GObject):
         """
             Pause the pipeline!
         """
+        print "here"
         self.state = gst.STATE_PAUSED
 
     def stop(self):

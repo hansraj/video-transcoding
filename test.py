@@ -3,6 +3,7 @@
 A simple test script to run with randomly selected options. Only relative
 options are supported right now (good enough for phase 1).
 Takes number of runs as command line option. Default is 10
+Also takes the directory path to look for media files that are to be converted.
 """
 
 import subprocess

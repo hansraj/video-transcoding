@@ -14,27 +14,26 @@ import requests
 import sys
 
 # Do you want to run with Celery integrated?
-CELERY_INTEGRATED = False
+CELERY_INTEGRATED = True
 if CELERY_INTEGRATED:
     import celery.states as task_states
     from celery import current_task
-    from celery import Celery
-    import xvid.config.celeryconfig as cc
 
 # Cleanup input/output files after transcoding is done
 
 DEFAULT_DEVICE = 'computer'
 DEFAULT_PRESET = 'H264-2pass'
-LOCAL_INPUT_DIR = '.'
-LOCAL_OUTPUT_DIR = '.'
+LOCAL_INPUT_DIR = '/home/xvid/input'
+LOCAL_OUTPUT_DIR = '/home/xvid/output'
 OUTPUT_EXT = '.mp4'
 CHUNK_SIZE = 1024
 MAX_NO_UPDATES = 20
+UPDATE_INTERVAL = 1000
 
 class XvidTranscoder(object):
     """ Implements our custom transcoder class."""
     def __init__(self, fe_input):
-        self._inurl = fe_input['input_directive']
+        self._inurl = fe_input['input']
         # FIXME Validate options
         if 'options' in fe_input:
             self._options = fe_input['options']
@@ -47,10 +46,35 @@ class XvidTranscoder(object):
         self.preset = None 
 
         self.is_transcoding = False
+        gobject.threads_init()
         self.mainloop = gobject.MainLoop()
 
         self._no_updates = 0
         self._percent = 0.0
+        self.input_info = None
+        self.output_info = None
+
+    def get_output_info(self):
+
+        def _got_info(info, is_media):
+            if not is_media:
+                print is_media
+                # Error in discovery of output file
+            else:
+                self.output_info = info
+
+            print self.input_info.videolength
+            print self.output_info.videolength
+            # now quit the main loop
+            gobject.idle_add(self.mainloop.quit)            
+ 
+        if not self.output_file:
+            # BUG (output_file is None or empty and we got transcoding done)
+            pass
+        output_discoverer = arista.discoverer.Discoverer(self.output_file)
+        output_discoverer.connect("discovered", _got_info)
+        output_discoverer.discover()
+        # main loop is still running. Can close now
 
     def prepare(self):
         """ Setup Preset. Downloads the file to local filesystem."""
@@ -72,6 +96,7 @@ class XvidTranscoder(object):
             output_file = output_file_name + output_file_ext
             self.output_file = os.path.abspath(os.path.join(LOCAL_OUTPUT_DIR,
                                                              output_file))
+
         except KeyError as e:
             self.preset = None;self.input_file = None;self.output_uri = None
 
@@ -87,7 +112,6 @@ class XvidTranscoder(object):
                                 preset=self.preset, 
                                 **self._options)
         transcoder = Transcoder(opt)
-
         transcoder.connect('pass-setup', self._transcoder_pass_setup)
         transcoder.connect('pass-complete', self._transcoder_pass_complete)
         transcoder.connect('complete', self._transcoder_complete)
@@ -102,6 +126,7 @@ class XvidTranscoder(object):
             self.do_transcode()
             self.finish()
         finally:
+            print "finally"
             self._do_cleanup()
 
     def _do_cleanup(self):
@@ -124,9 +149,6 @@ class XvidTranscoder(object):
                 chunks += 1
                 self._dl_percent = chunks * CHUNK_SIZE / float(total_size)
                 msg = "%.2f\r" % (self._dl_percent *100)
-                sys.stdout.write(msg)
-                sys.stdout.write("\b" *len(msg))
-                sys.stdout.flush()
 
     def _update_status(self, meta=None, state=None):
         if CELERY_INTEGRATED:
@@ -138,11 +160,10 @@ class XvidTranscoder(object):
         # as such harmless, but throws an exception un-necessarily
         # FIXME : position query will fail for 'very small update interval'
         #         when the pipeline is not yet in PLAYING state
-        if enc.enc_pass != current_pass:
-            return False
         try:
             percent, remaining = enc.status
         except:
+            print "1"
             return True
         # Adjust the reported percent to num-passes
         num_passes = enc.preset.pass_count
@@ -155,6 +176,7 @@ class XvidTranscoder(object):
             self._no_updates = 0
 
         if self._no_updates > MAX_NO_UPDATES:
+            print self._no_updates
             # encoder hanged
             self.transcoder.stop()
             gobject.idle_add(mainloop.quit)
@@ -164,22 +186,25 @@ class XvidTranscoder(object):
         meta=dict(per_comp=percent) 
 
         self._update_status(meta)
-        return (percent < 1.00)
+        return (percent < 100.0)
    
     def _transcoder_pass_setup(self, transcoder):
         self.is_transcoding = True
         if transcoder.enc_pass == 0:
-            pass #meta = dict(per_comp=0,worker_id=current_task.request.hostname)
-            #self._update_state(meta=meta, state=task_states.STARTED)
-        ret = gobject.timeout_add(100, self._status_poller, transcoder, 
+            # When the first pass is setup - we already have the input file
+            # info or else the pass won't be setup
+            self.input_info = transcoder.info
+            meta = dict(per_comp=0,worker_id=current_task.request.hostname)
+            self._update_status(meta=meta, state=task_states.STARTED)
+        ret = gobject.timeout_add(UPDATE_INTERVAL, self._status_poller, transcoder, 
                                   transcoder.enc_pass)
-    
+
     def _transcoder_pass_complete(self, transcoder):
         self.is_transcoding = False
     
     def _transcoder_complete(self, transcoder):
         transcoder.stop()
-        gobject.idle_add(self.mainloop.quit)
+        self.get_output_info()
     
     def _transcoder_error(transcoder):
         gobject.idle_add(self.mainloop.quit)

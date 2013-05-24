@@ -254,7 +254,7 @@ class Discoverer(gst.Pipeline):
         self.bus.connect("message", self._bus_message_cb)
 
         # Changed the timeout to 30s for http sources
-        self._timeoutid = gobject.timeout_add(30000, self._timed_out_or_eos)
+        self._timeoutid = gobject.timeout_add(300000, self._timed_out_or_eos)
         
         self.info("setting to PLAY")
         if not self.set_state(gst.STATE_PLAYING):

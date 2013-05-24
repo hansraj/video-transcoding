@@ -91,7 +91,7 @@ class TranscoderOptions(object):
                  deinterlace = None, crop = None, title = None, chapter = None,
                  audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
                  height = None, width = None, framerate = None,
-                 video_bitrate = None, absolute = False):
+                 video_bitrate = None, absolute = False, **kw):
         """
             @type uri: str
             @param uri: The URI to the input file, device, or stream
@@ -126,6 +126,7 @@ class TranscoderOptions(object):
             @type nb_threads: int
             @param nb_threads: Number of threads to use
         """
+        _log.debug("unhandled options : %s" % kw)
         self.reset(uri, preset, output_uri, ssa,subfile, subfile_charset, font, deinterlace,
                    crop, title, chapter, audio, start_time, stop_time, nb_threads,
                    height, width, framerate, video_bitrate, absolute)
@@ -151,8 +152,16 @@ class TranscoderOptions(object):
         self.title = title
         self.chapter = chapter
         self.audio = audio
-        self.start_time = start_time
-        self.stop_time = stop_time
+        try:
+            self.start_time = int(start_time)
+        except (TypeError, ValueError):
+            _log.debug("invalid start_time sent %s" % start_time)
+            self.start_time = 0
+        try:
+            self.stop_time = int(stop_time)
+        except (TypeError, ValueError):
+            _log.debug("invalid stop_time sent %s" % stop_time)
+            self.stop_time = -1
         self.nb_threads = nb_threads
         self.height = height
         self.width = width
@@ -216,11 +225,11 @@ class Transcoder(gobject.GObject):
                     
                 self.pause()
         
-        self.info = None
         self.discoverer = discoverer.Discoverer(options.uri)
         self.discoverer.connect("discovered", _got_info)
         self.discoverer.discover()
   
+        self.output_duration = 0.0
         self._lock = threading.Lock()
 
     @property
@@ -837,15 +846,19 @@ class Transcoder(gobject.GObject):
 
     def _do_seek(self, elem):
         start, stop = self.options.start_time, self.options.stop_time
+        duration = max(self.info.videolength, self.info.audiolength)
+        duration = duration / gst.SECOND
 
         if start < 0 or stop < -1:
             _log.debug("Start(%d) or Stop(%d) time is invalid" % \
                         (start, stop))
+            self.output_duration = duration
             return False
 
         if stop > -1  and start > stop:
             _log.debug("start(%d) is greater than stop(%d)" % \
                         (start, stop))
+            self.output_duration = duration
             return False
 
         if stop == -1:
@@ -858,12 +871,14 @@ class Transcoder(gobject.GObject):
             if start > 100.0 or stop > 100.0:
                 _log.debug("Relative Duration and start/stop are > 100")
                 return False
-            duration = max(self.info.videolength, self.info.audiolength)
-            duration = duration / gst.SECOND
             if stop != -1:
                 stop = duration * stop / 100.0 
-            start = duration * start / 100.0
 
+        if stop == -1:
+            self.output_duration = duration - start 
+        else:
+            self.output_duration = stop - start
+        
         seek_flags = gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE
 
         ret = elem.seek(1.0, gst.FORMAT_TIME, seek_flags,
@@ -992,8 +1007,10 @@ class Transcoder(gobject.GObject):
             @rtype: tuple
             @return: A tuple of percent, time_rem
         """
+        start, stop = self.options.start_time, self.options.stop_time
         duration = max(self.info.videolength, self.info.audiolength)
         
+        duration = self.output_duration * gst.SECOND
         if not duration or duration < 0:
             return 0.0, _("Unknown")
         

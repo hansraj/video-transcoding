@@ -212,25 +212,25 @@ class Transcoder(gobject.GObject):
         self._percent_cached = 0
         self._percent_cached_time = 0
         
-        def _got_info(info, is_media):
-            self.info = info
-            self.emit("discovered", info, is_media)
-            
-            if info.is_video or info.is_audio:
-                try:
-                    self._setup_pass()
-                except PipelineException, e:
-                    self.emit("error", str(e))
-                    return
-                    
-                self.pause()
-        
         self.discoverer = discoverer.Discoverer(options.uri)
-        self.discoverer.connect("discovered", _got_info)
+        self.discoverer.connect("discovered", self._got_info)
         self.discoverer.discover()
   
         self.output_duration = 0.0
         self._lock = threading.Lock()
+
+    def _got_info(self, info, is_media):
+        self.info = info
+        self.emit("discovered", info, is_media)
+        
+        if info.is_video or info.is_audio:
+            try:
+                self._setup_pass()
+            except PipelineException, e:
+                self.emit("error", str(e))
+                return
+            self.pause()
+
 
     @property
     def infile(self):

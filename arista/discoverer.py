@@ -43,6 +43,8 @@ from gst.extend.pygobject import gsignal
 _ = gettext.gettext
 _log = logging.getLogger("arista.discoverer")
 
+_DISCOVERY_TIMEOUT = 30000 # Discovery timeout in miliseconds
+
 class Discoverer(gst.Pipeline):
     """
     Discovers information about files.
@@ -254,7 +256,7 @@ class Discoverer(gst.Pipeline):
         self.bus.connect("message", self._bus_message_cb)
 
         # Changed the timeout to 30s for http sources
-        self._timeoutid = gobject.timeout_add(300000, self._timed_out_or_eos)
+        self._timeoutid = gobject.timeout_add(_DISCOVERY_TIMEOUT, self._timed_out_or_eos)
         
         self.info("setting to PLAY")
         if not self.set_state(gst.STATE_PLAYING):

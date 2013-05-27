@@ -20,6 +20,7 @@ if CELERY_INTEGRATED:
     from celery import current_task
 
 # Cleanup input/output files after transcoding is done
+CLEANUP_FILES = False
 
 DEFAULT_DEVICE = 'computer'
 DEFAULT_PRESET = 'H264-2pass'
@@ -28,7 +29,7 @@ LOCAL_OUTPUT_DIR = '/home/xvid/output'
 OUTPUT_EXT = '.mp4'
 CHUNK_SIZE = 1024
 MAX_NO_UPDATES = 20
-UPDATE_INTERVAL = 1000
+UPDATE_INTERVAL = 2000
 
 class XvidTranscoder(object):
     """ Implements our custom transcoder class."""
@@ -53,20 +54,20 @@ class XvidTranscoder(object):
         self._percent = 0.0
         self.input_info = None
         self.output_info = None
+        self._error_occured = False
+        self._error_str = ''
 
     def get_output_info(self):
 
         def _got_info(info, is_media):
             if not is_media:
-                print is_media
                 # Error in discovery of output file
+                self.emit("error", "Output file generated, " \
+                                   "but cannot get the info")
             else:
                 self.output_info = info
-
-            print self.input_info.videolength
-            print self.output_info.videolength
-            # now quit the main loop
-            gobject.idle_add(self.mainloop.quit)            
+                # now quit the main loop
+                gobject.idle_add(self.mainloop.quit)            
  
         if not self.output_file:
             # BUG (output_file is None or empty and we got transcoding done)
@@ -99,6 +100,13 @@ class XvidTranscoder(object):
 
         except KeyError as e:
             self.preset = None;self.input_file = None;self.output_uri = None
+            raise Exception("Invalid Device (%s) or Preset (%s)" % \
+                            (DEFAULT_DEVICE, DEFAULT_PRESET))
+        except Exception as e: # Invalid 
+            raise
+        
+        if not os.path.exists(LOCAL_OUTPUT_DIR):
+            raise Exception("Specified output directory does not exist")
 
     def finish(self):
         self._update_status(meta=dict(per_comp=100.0), state='COMPLETING')
@@ -107,17 +115,22 @@ class XvidTranscoder(object):
 
     def do_transcode(self):
         # FIXME : validations
+        
+        self._error = 0 
         opt = TranscoderOptions(uri=self.input_file, 
                                 output_uri=self.output_file, 
                                 preset=self.preset, 
                                 **self._options)
         transcoder = Transcoder(opt)
-        transcoder.connect('pass-setup', self._transcoder_pass_setup)
-        transcoder.connect('pass-complete', self._transcoder_pass_complete)
-        transcoder.connect('complete', self._transcoder_complete)
-        transcoder.connect('error', self._transcoder_error)
+        transcoder.connect('pass-setup', self._cb_transcoder_pass_setup)
+        transcoder.connect('pass-complete', self._cb_transcoder_pass_complete)
+        transcoder.connect('complete', self._cb_transcoder_complete)
+        transcoder.connect('error', self._cb_transcoder_error)
+        transcoder.connect("discovered", self._cb_transcoder_discovered)
 
         self.mainloop.run()
+        if self._error_occured:
+            raise Exception(self._error_str)
 
     def do_all(self):
         """ A wrapper function that calls prepare/do_transcode/finish"""
@@ -126,7 +139,6 @@ class XvidTranscoder(object):
             self.do_transcode()
             self.finish()
         finally:
-            print "finally"
             self._do_cleanup()
 
     def _do_cleanup(self):
@@ -134,21 +146,30 @@ class XvidTranscoder(object):
         if self.mainloop.is_running():
             self.mainloop.quit()
         try:
-            os.unlink(self.input_file)
-            os.unlink(self.output_file)
+            # don't cleanup files if errors occured.
+            global CLEANUP_FILES
+            if CLEANUP_FILES and not self._error_occured:
+                os.unlink(self.input_file)
+                os.unlink(self.output_file)
         except:
             pass
 
     def _download_file(self, dl_file_path):
         x = requests.get(self._inurl, stream=True)
+        # FIXME : what if the Server does not support byte-ranges? HTTP/1.0?
+        if x.status_code != 200: # Downloading error
+            raise Exception("Error %d in downloading %s" % \
+                            (x.status_code, self._inurl))
         total_size = int(x.headers['content-length'])
-        with open(dl_file_path, 'wb') as dlfile:
-            chunks = 0
-            for chunk in x.iter_content(CHUNK_SIZE):
-                dlfile.write(chunk)
-                chunks += 1
-                self._dl_percent = chunks * CHUNK_SIZE / float(total_size)
-                msg = "%.2f\r" % (self._dl_percent *100)
+        try:
+            with open(dl_file_path, 'wb') as dlfile:
+                chunks = 0
+                for chunk in x.iter_content(CHUNK_SIZE):
+                    dlfile.write(chunk)
+                    chunks += 1
+                    self._dl_percent = chunks * CHUNK_SIZE / float(total_size)
+        except Exception as e: # Any FS Errors
+            raise
 
     def _update_status(self, meta=None, state=None):
         if CELERY_INTEGRATED:
@@ -163,8 +184,7 @@ class XvidTranscoder(object):
         try:
             percent, remaining = enc.status
         except:
-            print "1"
-            return True
+            percent = 0.0
         # Adjust the reported percent to num-passes
         num_passes = enc.preset.pass_count
         pass_percent = percent / num_passes
@@ -176,10 +196,8 @@ class XvidTranscoder(object):
             self._no_updates = 0
 
         if self._no_updates > MAX_NO_UPDATES:
-            print self._no_updates
-            # encoder hanged
-            self.transcoder.stop()
-            gobject.idle_add(mainloop.quit)
+            enc.emit("error", "Pipeline Not Progressing")
+
         self._percent = percent
 
         percent = percent * 100.0 
@@ -188,29 +206,45 @@ class XvidTranscoder(object):
         self._update_status(meta)
         return (percent < 100.0)
    
-    def _transcoder_pass_setup(self, transcoder):
+    def _cb_transcoder_discovered(self, transcoder, discoverer, is_media):
+        if not is_media:
+            transcoder.emit("error", "%s: Not a valid Media file" % self._inurl)
+
+    def _cb_transcoder_pass_setup(self, transcoder):
         self.is_transcoding = True
         if transcoder.enc_pass == 0:
             # When the first pass is setup - we already have the input file
             # info or else the pass won't be setup
             self.input_info = transcoder.info
-            meta = dict(per_comp=0,worker_id=current_task.request.hostname)
+            if CELERY_INTEGRATED:
+                worker_id = current_task.request.hostname
+            else:
+                worker_id = ''
+            meta = dict(per_comp=0,worker_id=worker_id)
             self._update_status(meta=meta, state=task_states.STARTED)
-        ret = gobject.timeout_add(UPDATE_INTERVAL, self._status_poller, transcoder, 
-                                  transcoder.enc_pass)
+        self._status_poller_id = gobject.timeout_add(UPDATE_INTERVAL, 
+                                self._status_poller, transcoder, 
+                                transcoder.enc_pass)
 
-    def _transcoder_pass_complete(self, transcoder):
+    def _cb_transcoder_pass_complete(self, transcoder):
         self.is_transcoding = False
+        gobject.source_remove(self._status_poller_id)
+        self._status_poller_id = None
     
-    def _transcoder_complete(self, transcoder):
+    def _cb_transcoder_complete(self, transcoder):
         transcoder.stop()
         self.get_output_info()
     
-    def _transcoder_error(transcoder):
+    def _cb_transcoder_error(self, transcoder, err_str):
+        # FIXME : Do proper error handling.
+        self._error_occured = True
+        self._error_str = err_str
         gobject.idle_add(self.mainloop.quit)
 
 if __name__ == '__main__':
-    fe_input = {'input_directive':\
+    global CELERY_INTEGRATED
+    CELERY_INTEGRATED = False
+    fe_input = {'input':\
                 'https://s3.amazonaws.com/xvid-mediacoder/sintel_trailer-480p.ogv',
                 'options':{'start_time':10,
                            'height':80,
@@ -220,15 +254,3 @@ if __name__ == '__main__':
                 }
     xvid_transcoder = XvidTranscoder(fe_input)
     xvid_transcoder.do_all()
-    """finally:
-        if xvid_transcoder is not None:
-            if xvid_transcoder.mainloop.is_running():
-                xvid_transcoder.mainloop.quit()
-            try:
-                # Cleanup input and output file. Ignore any errors
-                if xvid_transcoder.input_file:
-                    os.unlink(xvid_transcoder.input_file)
-                if xvid_transcoder.output_file:
-                    os.unlink(xvid_transcoder.output_file)
-            except:
-                    pass"""

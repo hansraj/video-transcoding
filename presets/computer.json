@@ -107,6 +107,7 @@
                     96000
                 ]
             }
+        },
         {
             "name": "H.264", 
             "description": "H.264/AAC in MP4 for the computer",

@@ -27,7 +27,6 @@ data_files = [
     (os.path.join("share", "doc", "arista"), [
         "README.md", "LICENSE", "AUTHORS"
     ]),
-    (os.path.join("share", "nautilus-python", "extensions"), ["arista-nautilus.py"]),
 ]
 
 for (prefix, path) in [("arista", "presets"), 

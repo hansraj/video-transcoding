@@ -50,6 +50,7 @@ import gst
 
 import discoverer
 
+from threading import Thread
 _ = gettext.gettext
 _log = logging.getLogger("arista.transcoder")
 
@@ -91,7 +92,8 @@ class TranscoderOptions(object):
                  deinterlace = None, crop = None, title = None, chapter = None,
                  audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
                  height = None, width = None, framerate = None,
-                 video_bitrate = None, absolute = False):
+                 video_bitrate = None, absolute = False, max_duration = None,
+                 thumbnail_offset = 0):
         """
             @type uri: str
             @param uri: The URI to the input file, device, or stream
@@ -128,14 +130,16 @@ class TranscoderOptions(object):
         """
         self.reset(uri, preset, output_uri, ssa,subfile, subfile_charset, font, deinterlace,
                    crop, title, chapter, audio, start_time, stop_time, nb_threads,
-                   height, width, framerate, video_bitrate, absolute)
+                   height, width, framerate, video_bitrate, absolute, max_duration, 
+                   thumbnail_offset)
     
     def reset(self, uri = None, preset = None, output_uri = None, ssa = False,
               subfile = None, subfile_charset = None, font = "Sans Bold 16",
               deinterlace = None, crop = None, title = None, chapter = None,
               audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
               height = None, width = None, framerate = None,
-              video_bitrate = None, absolute = False):
+              video_bitrate = None, absolute = False, max_duration = None,
+              thumbnail_offset = 0):
         """
             Reset the input options to nothing.
         """
@@ -159,6 +163,8 @@ class TranscoderOptions(object):
         self.framerate = framerate
         self.video_bitrate = video_bitrate
         self.absolute = absolute
+        self.max_duration = max_duration
+        self.thumbnail_offset = thumbnail_offset
 
 # =============================================================================
 # The Transcoder
@@ -778,6 +784,51 @@ class Transcoder(gobject.GObject):
                                             gst.Structure("Prerolled"))
             self.pipe.post_message(m)
 
+    def _get_thumbnails(self):
+        _log.debug("Getting Thumbnails for %s" % self.options.output_uri)
+        start, stop = self.options.start_time, self.options.stop_time
+        offset = 0 
+        pipeline = gst.parse_launch('playbin2')
+        pipeline.props.uri = 'file://' + os.path.abspath(self.options.output_uri)
+        pipeline.props.audio_sink = gst.element_factory_make('fakesink')
+        pipeline.props.video_sink = gst.element_factory_make('fakesink')
+        pipeline.set_state(gst.STATE_PAUSED)
+
+        # FIXME: We can get rid of this calculations once we have the output file
+        # discovered and lengths available.
+        if not self.options.absolute:
+            if stop != -1:
+                stop = self.info.videolength/gst.SECOND * stop / 100.0 
+            start = self.info.videolength/gst.SECOND * start / 100.0 
+
+        if self.options.max_duration:
+            if (stop - start) > self.options.max_duration:
+                stop -= (stop - start) - self.options.max_duration
+
+        # Wait for state change to finish.
+        pipeline.get_state()
+        
+        caps = gst.Caps('image/png')
+        while offset <= (stop - start): 
+            pipeline.seek_simple(
+                gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
+            # Wait for seek to finish.
+            pipeline.get_state()
+            buffer = pipeline.emit('convert-frame', caps)
+            t = Thread(target=self.save_file, args=(offset, buffer,))
+            t.start()
+            offset += self.options.thumbnail_offset 
+
+    def save_file(self, offset, buf):
+        try:
+            # FIXME: Set proper name and location for thumbnails
+            #file_name = "/home/xvid/output/thumbnails/%s-thumbnail_%s.png" % (self.infile, offset)
+            file_name = "thumbnail_%s.png" % (offset)
+            with file(file_name, 'w') as fh:
+                fh.write(str(buf))
+        except Exception as e:
+            _log.debug("Error saving %s to disk: %s " % (file_name, e))
+
     def _cb_pad_blocked(self, pad, is_blocked):
         if self.prerolled :
             _log.debug("already prerolled")
@@ -864,6 +915,10 @@ class Transcoder(gobject.GObject):
                 stop = duration * stop / 100.0 
             start = duration * start / 100.0
 
+        if self.options.max_duration:
+            if (stop - start) > self.options.max_duration:
+                stop -= (stop - start) - self.options.max_duration
+                
         seek_flags = gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE
 
         ret = elem.seek(1.0, gst.FORMAT_TIME, seek_flags,
@@ -891,6 +946,7 @@ class Transcoder(gobject.GObject):
                 self.pause()
             else:
                 self.emit("complete")
+                self. _get_thumbnails()
         elif t == gst.MESSAGE_APPLICATION:
             msg_name = message.structure.get_name()
             if msg_name == "Prerolled":

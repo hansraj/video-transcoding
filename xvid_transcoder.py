@@ -1,6 +1,8 @@
 """
 Implementation of worker functionality as per new options parameter and using 
-only Transcoder object. Do not use arista queues.
+only Transcoder object. Does not use arista queues.
+Run with CELERY_INTEGRATED = True to run as worker.
+Can run as stand_alone with CELERY_INTEGRATED set to False
 """
 import arista
 import gobject
@@ -57,7 +59,7 @@ class XvidTranscoder(object):
         self._error_occured = False
         self._error_str = ''
 
-    def get_output_info(self):
+    def _get_output_info(self):
 
         def _got_info(info, is_media):
             if not is_media:
@@ -233,7 +235,7 @@ class XvidTranscoder(object):
     
     def _cb_transcoder_complete(self, transcoder):
         transcoder.stop()
-        self.get_output_info()
+        self._get_output_info()
     
     def _cb_transcoder_error(self, transcoder, err_str):
         # FIXME : Do proper error handling.

@@ -873,6 +873,7 @@ class Transcoder(gobject.GObject):
                 return False
             if stop != -1:
                 stop = duration * stop / 100.0 
+            start = duration * start / 100.0
 
         if stop == -1:
             self.output_duration = duration - start 

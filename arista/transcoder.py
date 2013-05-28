@@ -219,6 +219,8 @@ class Transcoder(gobject.GObject):
         self.output_duration = 0.0
         self._lock = threading.Lock()
 
+        self._start_ns = 0
+
     def _got_info(self, info, is_media):
         self.info = info
         self.emit("discovered", info, is_media)
@@ -880,6 +882,7 @@ class Transcoder(gobject.GObject):
         else:
             self.output_duration = stop - start
         
+        self._start_ns = start * gst.SECOND
         seek_flags = gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE
 
         ret = elem.seek(1.0, gst.FORMAT_TIME, seek_flags,
@@ -1022,6 +1025,7 @@ class Transcoder(gobject.GObject):
         except AttributeError:
             raise TranscoderStatusException(_("No pipeline to query!"))
         
+        pos = pos - self._start_ns
         percent = pos / float(duration)
         if percent <= 0.0:
             return 0.0, _("Unknown")

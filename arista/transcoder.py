@@ -212,14 +212,10 @@ class Transcoder(gobject.GObject):
         self._percent_cached = 0
         self._percent_cached_time = 0
         
-        self.discoverer = discoverer.Discoverer(options.uri)
-        self.discoverer.connect("discovered", self._got_info)
-        self.discoverer.discover()
+        self.do_discovery(options.uri, self._got_info)
   
         self.output_duration = 0.0
         self._lock = threading.Lock()
-
-        self._start_ns = 0
 
     def _got_info(self, info, is_media):
         self.info = info
@@ -233,6 +229,18 @@ class Transcoder(gobject.GObject):
                 return
             self.pause()
 
+    def do_discovery(self, filename, callback):
+        """ Does discovery of the filename and connects the discovered signal to callback"""
+        if not filename:
+            # BUG 
+            return
+        if not hasattr(callback, '__call__'):
+            # FIXME : what if passed callback is a class?
+            # BUG 
+            return
+        d = discoverer.Discoverer(filename)
+        d.connect("discovered", callback)
+        d.discover()
 
     @property
     def infile(self):
@@ -741,6 +749,7 @@ class Transcoder(gobject.GObject):
         # Build the pipeline and get ready!
         # =====================================================================
 
+        self._start_ns = 0
         self.counter = 1
         self.prerolled = False
 
@@ -1028,7 +1037,8 @@ class Transcoder(gobject.GObject):
         pos = pos - self._start_ns
         percent = pos / float(duration)
         if percent <= 0.0:
-            return 0.0, _("Unknown")
+            
+            return self._percent_cached, _("Unknown")
         
         if self._percent_cached == percent and time.time() - self._percent_cached_time > 5:
             self.pipe.post_message(gst.message_new_eos(self.pipe))

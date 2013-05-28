@@ -66,7 +66,7 @@ class AristaInstall(install_data):
                            print "Byte-compile failed: " + str(e)
 
 setup(
-    name = "arista",
+    name = "mc-transcoder",
     version = "0.9.8",
     description = "An easy multimedia transcoder for GNOME",
     long_description = """Overview

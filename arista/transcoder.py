@@ -478,13 +478,15 @@ class Transcoder(gobject.GObject):
         num = self.info.videorate.num
         denom = self.info.videorate.denom
 
+        _log.debug("Input video framerate : %d/%d", num, denom)
         if self.options.framerate is not None:
             if self.options.absolute:
                 num = self.options.framerate
                 denom = 1 #Considering the the denom to 1
             else:
+                
                 num = round(num * self.options.framerate/100)
-                denom = round(denom * self.options.framerate/100) or 1
+                # don't scale denom as well!! 
 
         _log.debug("Framerate before Preset Comparison: %d/%d" % (num, denom))
         rmin = self.preset.vcodec.rate[0].num / \
@@ -1037,8 +1039,7 @@ class Transcoder(gobject.GObject):
         pos = pos - self._start_ns
         percent = pos / float(duration)
         if percent <= 0.0:
-            
-            return self._percent_cached, _("Unknown")
+            return 0.0, _("Unknown")
         
         if self._percent_cached == percent and time.time() - self._percent_cached_time > 5:
             self.pipe.post_message(gst.message_new_eos(self.pipe))

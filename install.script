@@ -1,1 +1,1 @@
-python setup.py install -O1 --root=$RPM_BUILD_ROOT --prefix=/opt/xvid/python/ --record=INSTALLED_FILES
+python setup.py install -O1 --root=$RPM_BUILD_ROOT --prefix=/opt/xvid/python/ --exec-prefix=/opt/xvid/python/ --record=INSTALLED_FILES

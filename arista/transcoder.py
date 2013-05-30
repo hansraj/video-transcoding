@@ -788,17 +788,23 @@ class Transcoder(gobject.GObject):
 
     def _get_thumbnails(self):
         _log.debug("Getting Thumbnails for %s" % self.options.output_uri)
+
         start, stop = self.options.start_time, self.options.stop_time
         offset = 0 
-        pipeline = gst.parse_launch('playbin2')
-        pipeline.props.uri = 'file://' + os.path.abspath(self.options.output_uri)
-        pipeline.props.audio_sink = gst.element_factory_make('fakesink')
-        pipeline.props.video_sink = gst.element_factory_make('fakesink')
-        pipeline.set_state(gst.STATE_PAUSED)
+        #FIXME: The scaling is currently hardcoded to 4:3, need to do it based on input video PAR.
+        caps = "video/x-raw-rgb,format=RGB,width=120,height=90"
+        cmd = "uridecodebin uri=file://%s  ! ffmpegcolorspace ! videorate ! videoscale ! " \
+                "ffmpegcolorspace ! appsink name=sink caps=%s" % \
+                (os.path.abspath(self.options.output_uri), caps)
 
+        pipeline = gst.parse_launch(cmd)
+        appsink = pipeline.get_by_name("sink")
+        pipeline.set_state(gst.STATE_PAUSED)
+        pipeline.get_state()
+    
         # ========================================================================
         # FIXME: We can get rid of this calculations once we have the output file
-        # discovered and lengths available.
+        # discovered by integration with Abhijit's worker code(do_discovery method)
         # ========================================================================
         if not self.options.absolute:
             if stop != -1:
@@ -809,29 +815,25 @@ class Transcoder(gobject.GObject):
             if (stop - start) > self.options.max_duration:
                 stop -= (stop - start) - self.options.max_duration
         # ========================================================================
-
-        pipeline.get_state()
-        
-        caps = gst.Caps('image/png')
-        while offset <= (stop - start): 
-            pipeline.seek_simple(
-                gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
-            pipeline.get_state()
-            buffer = pipeline.emit('convert-frame', caps)
-            t = Thread(target=self._scale_and_save_file, args=(offset, buffer,))
-            t.start()
+        while offset <= (stop - start):
+            assert pipeline.seek_simple( 
+                gst.FORMAT_TIME, gst.SEEK_FLAG_KEY_UNIT | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
+            buffer = appsink.emit('pull-preroll')
+            try:
+                t = Thread(target=self._load_and_save_file, args=(offset, buffer,))
+                t.start()
+            except Exception as e:
+                _log.debug("Error creating thread: %s " % e)
             offset += self.options.thumbnail_offset 
 
-    def _scale_and_save_file(self, offset, buffer):
-        file_name = "/home/xvid/output/thumbnails/%s-thumbnail_%s.png" % (self.infile.split('/')[4].split('.')[0], offset)
+    # Load pixbuf and save file to disk
+    def _load_and_save_file(self, offset, buffer):
+        file_name = "/home/xvid/output/thumbnails/%s-thumbnail_%s.png" % \
+                              (self.infile.split('/')[4].split('.')[0], offset)
         try:
-            loader = gtk.gdk.PixbufLoader("png")
-            loader.write(buffer)
-            loader.close()
-            pixbuf = loader.get_pixbuf()
-            #FIXME: Currently considering the aspect ration as 4:3 for thumbnails
-            pixbuf = pixbuf.scale_simple(120, 90, gtk.gdk.INTERP_BILINEAR)
-            pixbuf.save(file_name, 'png')
+            pix_buf = gtk.gdk.pixbuf_new_from_data(buffer.data, \
+                        gtk.gdk.COLORSPACE_RGB, False, 8, 120, 90, 360)
+            pix_buf.save(file_name, 'png')
         except Exception as e:
             _log.debug("Error saving %s to disk: %s " % (file_name, e))
 

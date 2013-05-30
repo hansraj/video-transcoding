@@ -47,6 +47,8 @@ except ImportError:
 
 import gobject
 import gst
+import gtk
+import gtk.gdk
 
 import discoverer
 
@@ -794,8 +796,10 @@ class Transcoder(gobject.GObject):
         pipeline.props.video_sink = gst.element_factory_make('fakesink')
         pipeline.set_state(gst.STATE_PAUSED)
 
+        # ========================================================================
         # FIXME: We can get rid of this calculations once we have the output file
         # discovered and lengths available.
+        # ========================================================================
         if not self.options.absolute:
             if stop != -1:
                 stop = self.info.videolength/gst.SECOND * stop / 100.0 
@@ -804,28 +808,30 @@ class Transcoder(gobject.GObject):
         if self.options.max_duration:
             if (stop - start) > self.options.max_duration:
                 stop -= (stop - start) - self.options.max_duration
+        # ========================================================================
 
-        # Wait for state change to finish.
         pipeline.get_state()
         
         caps = gst.Caps('image/png')
         while offset <= (stop - start): 
             pipeline.seek_simple(
                 gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
-            # Wait for seek to finish.
             pipeline.get_state()
             buffer = pipeline.emit('convert-frame', caps)
-            t = Thread(target=self.save_file, args=(offset, buffer,))
+            t = Thread(target=self._scale_and_save_file, args=(offset, buffer,))
             t.start()
             offset += self.options.thumbnail_offset 
 
-    def save_file(self, offset, buf):
+    def _scale_and_save_file(self, offset, buffer):
+        file_name = "/home/xvid/output/thumbnails/%s-thumbnail_%s.png" % (self.infile.split('/')[4].split('.')[0], offset)
         try:
-            # FIXME: Set proper name and location for thumbnails
-            #file_name = "/home/xvid/output/thumbnails/%s-thumbnail_%s.png" % (self.infile, offset)
-            file_name = "thumbnail_%s.png" % (offset)
-            with file(file_name, 'w') as fh:
-                fh.write(str(buf))
+            loader = gtk.gdk.PixbufLoader("png")
+            loader.write(buffer)
+            loader.close()
+            pixbuf = loader.get_pixbuf()
+            #FIXME: Currently considering the aspect ration as 4:3 for thumbnails
+            pixbuf = pixbuf.scale_simple(120, 90, gtk.gdk.INTERP_BILINEAR)
+            pixbuf.save(file_name, 'png')
         except Exception as e:
             _log.debug("Error saving %s to disk: %s " % (file_name, e))
 

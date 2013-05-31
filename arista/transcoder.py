@@ -984,7 +984,9 @@ class Transcoder(gobject.GObject):
 
                 # Do a seek 
                 if self._do_seek(self.pipe) != True:
-                   _log.debug("Seek failed!")
+                    _log.debug("Seek failed!")
+                    # failure to seek is an error, that should be raised
+                    self.emit("error", "Seek Failed")
 
                 uridecode_elem = self.pipe.get_by_name("uridecode")
                 fake = self.pipe.get_by_name("fake")

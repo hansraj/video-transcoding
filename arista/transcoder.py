@@ -188,7 +188,8 @@ class Transcoder(gobject.GObject):
                     gobject.TYPE_PYOBJECT)),       # message
         "complete": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE, tuple()),
         "error": (gobject.SIGNAL_RUN_LAST, gobject.TYPE_NONE,
-                 (gobject.TYPE_PYOBJECT,)),        # error
+                 (gobject.TYPE_PYOBJECT,  # error 
+                  gobject.TYPE_PYOBJECT)),# error_num
     }
     
     def __init__(self, options):
@@ -225,7 +226,7 @@ class Transcoder(gobject.GObject):
             try:
                 self._setup_pass()
             except PipelineException, e:
-                self.emit("error", str(e))
+                self.emit("error", str(e), 0)
                 return
             self.pause()
 
@@ -930,7 +931,7 @@ class Transcoder(gobject.GObject):
                 if self._do_seek(self.pipe) != True:
                     _log.debug("Seek failed!")
                     # failure to seek is an error, that should be raised
-                    self.emit("error", "Seek Failed")
+                    self.emit("error", "Seek Failed", 0)
 
                 uridecode_elem = self.pipe.get_by_name("uridecode")
                 fake = self.pipe.get_by_name("fake")

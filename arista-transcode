@@ -239,6 +239,12 @@ if __name__ == "__main__":
     parser.add_option("--absolute", dest = "absolute",
                       default=False, action="store_true",
                       help = _("Treat Params as absolute. (Use with caution)"))
+    parser.add_option("--max-duration", dest = "max_duration",
+                      default=None, nargs=1, type=int,
+                      help = _("Set max duration for transcoding"))
+    parser.add_option("--thumbnail-offset", dest = "thumbnail_offset",
+                      default=None, nargs=1, type=int,
+                      help = _("Set interval for taking thumbnails"))
 
 
     options, args = parser.parse_args()
@@ -434,7 +440,9 @@ if __name__ == "__main__":
                                      width = options.width,
                                      framerate = options.framerate,
                                      video_bitrate = options.video_bitrate,
-                                     absolute = options.absolute)
+                                     absolute = options.absolute,
+                                     max_duration = options.max_duration,
+                                     thumbnail_offset = options.thumbnail_offset)
 
             queue.append(opts)
         

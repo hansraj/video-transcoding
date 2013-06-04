@@ -51,7 +51,6 @@ class Thumbnailer(object):
     # Load pixbuf and save file to disk
     def _load_and_save_file(self, offset, buffer):
         file_name = "%s/thumbnail_%s.jpeg" %  (self.output_dir, offset)
-        print file_name
         try:
             pix_buf = gtk.gdk.pixbuf_new_from_data(buffer.data, \
                         gtk.gdk.COLORSPACE_RGB, False, 8, self.width, self.height, self.width * 3)

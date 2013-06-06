@@ -204,7 +204,7 @@ class TranscodeQueue(gobject.GObject):
                 if transcoder.enc_pass == 0:
                     self.emit("entry-start", item)
             
-            def error(transcoder, errorstr):
+            def error(transcoder, errorstr, errnum=0):
                 self.emit("entry-error", item, errorstr)
                 self._queue.pop(0)
                 self.pipe_running = False

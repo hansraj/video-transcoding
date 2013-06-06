@@ -984,39 +984,44 @@ class Transcoder(gobject.GObject):
                 _log.debug("Prerolled application msg received!")
 
                 # Do a seek 
-                if self._do_seek(self.pipe) != True:
-                    _log.debug("Seek failed!")
-                    # failure to seek is an error, that should be raised
-                    self.emit("error", "Seek Failed", 0)
+                try:
+                    if self._do_seek(self.pipe) != True:
+                        _log.debug("Seek failed!")
+                        # failure to seek is an error, that should be raised
+                        self.emit("error", "Seek Failed", 0)
 
-                uridecode_elem = self.pipe.get_by_name("uridecode")
-                fake = self.pipe.get_by_name("fake")
+                    uridecode_elem = self.pipe.get_by_name("uridecode")
+                    fake = self.pipe.get_by_name("fake")
 
-                self.pipe.remove(fake)
-                fake.set_state(gst.STATE_NULL)
+                    self.pipe.remove(fake)
+                    fake.set_state(gst.STATE_NULL)
 
-                # adding muxer sub-pipe                
-                mux_subpipe = gst.parse_launch(self.mux_str)
-                mux_subpipe.set_state(gst.STATE_PAUSED)
-                self.pipe.add(mux_subpipe)
+                    # adding muxer sub-pipe                
+                    mux_subpipe = gst.parse_launch(self.mux_str)
+                    mux_subpipe.set_state(gst.STATE_PAUSED)
+                    self.pipe.add(mux_subpipe)
 
-                # adding and connecting the audio and video sub-pipes
-                video_pads = 0
-                audio_pads = 0
-                for pad in uridecode_elem.pads():
-                   if "video" in pad.get_caps().to_string():
-                      video_pads += 1
-                      self._handle_video_pad_added(uridecode_elem, pad, video_pads)
-                   elif "audio" in pad.get_caps().to_string():
-                      audio_pads += 1
-                      self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
+                    # adding and connecting the audio and video sub-pipes
+                    video_pads = 0
+                    audio_pads = 0
+                    for pad in uridecode_elem.pads():
+                        if "video" in pad.get_caps().to_string():
+                            video_pads += 1
+                            self._handle_video_pad_added(uridecode_elem, pad, video_pads)
+                        elif "audio" in pad.get_caps().to_string():
+                            audio_pads += 1
+                            self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
 
                 # unblocking all pads again (no matter what type)
-                for pad in uridecode_elem.pads():
-                   pad.set_blocked(False)
+                    for pad in uridecode_elem.pads():
+                        pad.set_blocked(False)
 
-                self.start()
-                self.emit("pass-setup")
+                    self.start()
+                    self.emit("pass-setup")
+                except Exception as e:
+                    _log.debug(e.message)
+                    self.emit("error", e.message, 0)
+
         elif t == gst.MESSAGE_ASYNC_DONE:
             _log.debug("ASYNC_DONE msg received!")
         

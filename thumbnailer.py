@@ -11,9 +11,9 @@ _log = logging.getLogger("arista.transcoder")
 
 class Thumbnailer(object):
     
-    def __init__(self, filepath, output_dir, width=120, height=90, interval=1, par=1):
+    def __init__(self, filepath, output_dir=None, width=128, height=72, interval=1, par=1):
         self.filepath = filepath
-        self.output_dir = output_dir
+        self.output_dir = output_dir if output_dir else os.getcwd()
         self.width = width
         #The default scaling is set to 4:3, with 120*90
         self.height = height
@@ -24,7 +24,7 @@ class Thumbnailer(object):
     def create_thumbnails(self):
         _log.debug("Getting Thumbnails for %s" % self.filepath)
         offset = 0 
-        caps = "video/x-raw-rgb,format=RGB,width=%s,height=%s" % (self.width, self.height)
+        caps = "video/x-raw-rgb,format=RGB,width=%s,height=%s,pixel-aspect-ration=1/1" % (self.width, self.height)
         cmd = "uridecodebin uri=file://%s  ! ffmpegcolorspace ! videorate ! videoscale ! " \
                 "ffmpegcolorspace ! appsink name=sink caps=%s" % \
                 (os.path.abspath(self.filepath), caps)
@@ -37,7 +37,7 @@ class Thumbnailer(object):
         length, format = pipeline.query_duration(gst.FORMAT_TIME)
         while offset <= length/gst.SECOND:
             assert pipeline.seek_simple( 
-                gst.FORMAT_TIME, gst.SEEK_FLAG_KEY_UNIT | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
+                gst.FORMAT_TIME, gst.SEEK_FLAG_ACCURATE | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
             buffer = appsink.emit('pull-preroll')
             try:
                 #TODO: Use threads as the file (I/O operation)is time consuming.
@@ -58,4 +58,9 @@ class Thumbnailer(object):
             pix_buf.save(file_name, 'jpeg')
         except Exception as e:
             _log.debug("Error saving %s to disk: %s " % (file_name, e))
+
+if __name__ == '__main__':
+    tn = Thumbnailer('/home/xvid/input/Intro.wmv')
+    tn.create_thumbnails()
+
 

@@ -24,7 +24,7 @@ class Thumbnailer(object):
     def create_thumbnails(self):
         _log.debug("Getting Thumbnails for %s" % self.filepath)
         offset = 0 
-        caps = "video/x-raw-rgb,format=RGB,width=%s,height=%s" % (self.width, self.height)
+        caps = "video/x-raw-rgb,format=RGB,width=%s,height=%s,pixel-aspect-ratio=1/1" % (self.width, self.height)
         cmd = "uridecodebin uri=file://%s  ! ffmpegcolorspace ! videorate ! videoscale ! " \
                 "ffmpegcolorspace ! appsink name=sink caps=%s" % \
                 (os.path.abspath(self.filepath), caps)

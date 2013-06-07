@@ -224,6 +224,8 @@ class Transcoder(gobject.GObject):
         self.do_discovery(options.uri, self._got_info)
   
         self.output_duration = 0.0
+        self.res_scale_factor = 1.0
+        self.fr_scale_factor = 1.0
         self._lock = threading.Lock()
 
     def _got_info(self, info, is_media):
@@ -472,6 +474,16 @@ class Transcoder(gobject.GObject):
         _log.debug("determined (preset adjusted) height:%d, width :%d" % \
                         (height, width))
 
+        # We have final height and width now. We need to adjust those to get 
+        # resolution multiplier to get right value for 'eventual bitrate'
+        width_scale_factor, height_scale_factor = 1.0, 1.0
+        if input_width: 
+            width_scale_factor = float(width)/input_width
+        if input_height:
+            height_scale_factor = float(height)/input_height
+
+        self.res_scale_factor = width_scale_factor * height_scale_factor
+
         for vcap in self.vcaps:
             vcap["width"] = width
             vcap["height"] = height
@@ -487,6 +499,8 @@ class Transcoder(gobject.GObject):
         num = self.info.videorate.num
         denom = self.info.videorate.denom
 
+        input_num = num
+        input_denom = denom
         _log.debug("Input video framerate : %d/%d", num, denom)
         if self.options.framerate is not None:
             if self.options.absolute:
@@ -511,6 +525,7 @@ class Transcoder(gobject.GObject):
             num = self.preset.vcodec.rate[0].num
             denom = self.preset.vcodec.rate[0].denom
 
+        self.fr_scale_factor = (num/float(denom)) / (input_num/float(input_denom))
         _log.debug("Final Determined Framerate : %d/%d" % (num, denom))
         return num, denom    
 
@@ -549,14 +564,14 @@ class Transcoder(gobject.GObject):
                 cur = (cur[0], amax)
                 setattr(self.preset.acodec, field, cur)
         
-    def _get_video_bitrate(self):
+    def _get_input_video_bitrate(self):
         filesize = 0
         oabitrate = 0
         try:
             filesize = os.path.getsize( os.path.abspath(self.infile) )
         except:
             _log.debug(_("Error reading FILESIZE for %(filename)s") % { "filename": self.options.uri})
-
+            return 0
         # FIXME: Currently the audio bitrate value obtained is unreliable, so not using it for the calculation.
         # Uncomment the 2 lines below to use the value.
         #if self.info.tags.has_key("bitrate"):
@@ -574,12 +589,24 @@ class Transcoder(gobject.GObject):
 
 
     def _set_video_bitrate(self):
-        if self.options.absolute:
+
+        if self.options.video_bitrate and self.options.absolute:
             return self.options.video_bitrate
-        else:
-            ovbitrate = self._get_video_bitrate()
-            if ovbitrate > 0:
-                return (ovbitrate * self.options.video_bitrate/100)
+
+        target_bitrate = self._get_input_video_bitrate()
+        if self.options.absolute:
+            return int(target_bitrate)
+
+        # Both are false now
+        target_bitrate *= self.res_scale_factor
+        target_bitrate *= self.fr_scale_factor 
+        if self.options.video_bitrate: # relative
+            target_bitrate *= self.options.video_bitrate / 100.0
+
+        _log.debug("determined target bitrate : %d,res_scale_factor : %.2f," \
+                   "frame_rate scale_factor : %.2f" % (target_bitrate, 
+                            self.res_scale_factor, self.fr_scale_factor) )
+        return int(target_bitrate)
 
     def _setup_subtitles_from_file(self):
         sub = ""
@@ -691,8 +718,8 @@ class Transcoder(gobject.GObject):
             # FIXME : vp8enc requires the parameter as 'target-bitrate' and 
             # requires it in bps, while x264 requires it in kbps. In general 
             # this handling should be much better than what it is
-            if self.options.video_bitrate:
-                vencoder += " bitrate={0}".format(self._set_video_bitrate())
+            target_bitrate = self._set_video_bitrate()
+            vencoder += " bitrate={0}".format(target_bitrate)
 
             deint = ""
             if self.options.deinterlace:

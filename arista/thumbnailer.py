@@ -35,7 +35,8 @@ class Thumbnailer(object):
         pipeline.get_state()
     
         length, format = pipeline.query_duration(gst.FORMAT_TIME)
-        while offset <= length/gst.SECOND:
+        #FIXME: Currently seeking the last frame does not work reliably
+        while offset < length/gst.SECOND:
             assert pipeline.seek_simple( 
                 gst.FORMAT_TIME, gst.SEEK_FLAG_KEY_UNIT | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
             buffer = appsink.emit('pull-preroll')

@@ -11,19 +11,27 @@ _log = logging.getLogger("arista.transcoder")
 
 class Thumbnailer(object):
     
-    def __init__(self, filepath, output_dir, width=120, height=90, count=5, interval=10, par=1):
+    def __init__(self, filepath, output_dir, interval=None, number=5,\
+                 width=120, height=90, preserve_aspect_ratio=True, prefix="thumbnail", format='jpeg'):
         self.filepath = filepath
         self.output_dir = output_dir
         self.width = width
         #The default scaling is set to 4:3, with 120*90
         self.height = height
-        self.count = count
+        self.count = number
         self.interval = interval
         #TODO: Need to use proper pixel-aspect-ratio
-        self.par = par
+        self.par = preserve_aspect_ratio
+        self.prefix = prefix
+        self.format = format
 
     def create_thumbnails(self):
         _log.debug("Getting Thumbnails for %s" % self.filepath)
+
+        if not os.path.exists(self.filepath):
+            _log.debug("File not found: %s" % self.filepath)
+            return False
+
         offset = counter = 0 
         caps = "video/x-raw-rgb,format=RGB,width=%s,height=%s,pixel-aspect-ratio=1/1" % (self.width, self.height)
         cmd = "uridecodebin uri=file://%s  ! ffmpegcolorspace ! videorate ! videoscale ! " \
@@ -36,6 +44,10 @@ class Thumbnailer(object):
         pipeline.get_state()
     
         length, format = pipeline.query_duration(gst.FORMAT_TIME)
+
+        if self.interval is None:
+            self.interval = (length/gst.SECOND) / self.count or 1
+    
         while offset < length/gst.SECOND and counter < self.count:
             ret = pipeline.seek_simple( 
                 gst.FORMAT_TIME, gst.SEEK_FLAG_ACCURATE | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
@@ -48,7 +60,7 @@ class Thumbnailer(object):
 
     # Load pixbuf and save file to disk
     def _load_and_save_file(self, offset, buffer):
-        file_name = "%s/thumbnail_%s.jpeg" %  (self.output_dir, offset)
+        file_name = "%s/%s_%s.%s" %  (self.output_dir, self.prefix, offset, self.format)
         try:
             pix_buf = gtk.gdk.pixbuf_new_from_data(buffer.data, \
                         gtk.gdk.COLORSPACE_RGB, False, 8, self.width, self.height, self.width * 3)

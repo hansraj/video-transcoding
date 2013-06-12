@@ -11,19 +11,20 @@ _log = logging.getLogger("arista.transcoder")
 
 class Thumbnailer(object):
     
-    def __init__(self, filepath, output_dir, width=120, height=90, interval=1, par=1):
+    def __init__(self, filepath, output_dir, width=120, height=90, count=5, interval=10, par=1):
         self.filepath = filepath
         self.output_dir = output_dir
         self.width = width
         #The default scaling is set to 4:3, with 120*90
         self.height = height
+        self.count = count
         self.interval = interval
         #TODO: Need to use proper pixel-aspect-ratio
         self.par = par
 
     def create_thumbnails(self):
         _log.debug("Getting Thumbnails for %s" % self.filepath)
-        offset = 0 
+        offset = counter = 0 
         caps = "video/x-raw-rgb,format=RGB,width=%s,height=%s,pixel-aspect-ratio=1/1" % (self.width, self.height)
         cmd = "uridecodebin uri=file://%s  ! ffmpegcolorspace ! videorate ! videoscale ! " \
                 "ffmpegcolorspace ! appsink name=sink caps=%s" % \
@@ -35,18 +36,14 @@ class Thumbnailer(object):
         pipeline.get_state()
     
         length, format = pipeline.query_duration(gst.FORMAT_TIME)
-        #FIXME: Currently seeking the last frame does not work reliably
-        while offset < length/gst.SECOND:
-            assert pipeline.seek_simple( 
-                gst.FORMAT_TIME, gst.SEEK_FLAG_KEY_UNIT | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
+        while offset < length/gst.SECOND and counter < self.count:
+            ret = pipeline.seek_simple( 
+                gst.FORMAT_TIME, gst.SEEK_FLAG_ACCURATE | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
             buffer = appsink.emit('pull-preroll')
-            try:
-                #TODO: Use threads as the file (I/O operation)is time consuming.
+            if buffer:
                 self._load_and_save_file(offset, buffer)
-            except Exception as e:
-                _log.debug("Error creating thread: %s " % e)
-                return False
-            offset += self.interval
+                offset += self.interval
+            counter += 1
         return True
 
     # Load pixbuf and save file to disk

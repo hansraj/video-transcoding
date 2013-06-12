@@ -818,47 +818,6 @@ class Transcoder(gobject.GObject):
                                             gst.Structure("Prerolled"))
             self.pipe.post_message(m)
 
-    def get_thumbnails(self, file_info, thumbnail_dir):
-        _log.debug("Getting Thumbnails for %s of length :%s" % \
-            (self.options.output_uri, file_info.videolength/gst.SECOND))
-
-        start, stop = self.options.start_time, self.options.stop_time
-        offset = 0 
-        #FIXME: The scaling is currently hardcoded to 4:3, need to do it based on input video PAR.
-        caps = "video/x-raw-rgb,format=RGB,width=120,height=90"
-        cmd = "uridecodebin uri=file://%s  ! ffmpegcolorspace ! videorate ! videoscale ! " \
-                "ffmpegcolorspace ! appsink name=sink caps=%s" % \
-                (os.path.abspath(self.options.output_uri), caps)
-
-        pipeline = gst.parse_launch(cmd)
-        appsink = pipeline.get_by_name("sink")
-        pipeline.set_state(gst.STATE_PAUSED)
-        pipeline.get_state()
-    
-        while offset <= file_info.videolength/gst.SECOND:
-            assert pipeline.seek_simple( 
-                gst.FORMAT_TIME, gst.SEEK_FLAG_KEY_UNIT | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
-            buffer = appsink.emit('pull-preroll')
-            try:
-                #t = Thread(target=self._load_and_save_file, args=(offset, buffer, thumbnail_dir))
-                #t.start()
-                self._load_and_save_file(offset, buffer, thumbnail_dir)
-            except Exception as e:
-                _log.debug("Error creating thread: %s " % e)
-                return False
-            offset += self.options.thumbnail_offset 
-        return True
-
-    # Load pixbuf and save file to disk
-    def _load_and_save_file(self, offset, buffer, thumbnail_dir):
-        file_name = "%s/thumbnail_%s.png" %  (thumbnail_dir, offset)
-        try:
-            pix_buf = gtk.gdk.pixbuf_new_from_data(buffer.data, \
-                        gtk.gdk.COLORSPACE_RGB, False, 8, 120, 90, 360)
-            pix_buf.save(file_name, 'png')
-        except Exception as e:
-            _log.debug("Error saving %s to disk: %s " % (file_name, e))
-
     def _cb_pad_blocked(self, pad, is_blocked):
         if self.prerolled :
             _log.debug("already prerolled")
@@ -986,7 +945,6 @@ class Transcoder(gobject.GObject):
                 self.pause()
             else:
                 self.emit("complete")
-#                self. _get_thumbnails()
         elif t == gst.MESSAGE_APPLICATION:
             msg_name = message.structure.get_name()
             if msg_name == "Prerolled":

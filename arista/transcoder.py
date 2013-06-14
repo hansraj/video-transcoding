@@ -60,6 +60,8 @@ _log = logging.getLogger("arista.transcoder")
 # Custom exceptions
 # =============================================================================
 
+_NO_APPLICATION_MSG_TIMEOUT = 20000
+
 class TranscoderException(Exception):
     """
         A generic transcoder exception to be thrown when something goes wrong.
@@ -777,6 +779,9 @@ class Transcoder(gobject.GObject):
         self.audio_str = audio_str
         self.mux_str = mux_str
 
+        self._timeoutid = None # Need to make sure this is None every pass
+        self._timeoutid = gobject.timeout_add(_NO_APPLICATION_MSG_TIMEOUT,
+                                                self._cb_no_app_message_timeout)
         self._build_pipeline(uridecode_str)
     
     def _build_pipeline(self, uridecode_str):
@@ -979,11 +984,16 @@ class Transcoder(gobject.GObject):
                             audio_pads += 1
                             self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
 
-                # unblocking all pads again (no matter what type)
+                    # unblocking all pads again (no matter what type)
                     for pad in uridecode_elem.pads():
                         pad.set_blocked(False)
 
                     self.start()
+                    # remove the timeoutid
+                    if self._timeoutid:
+                        gobject.source_remove(self._timeoutid)
+                        self._timeoutid = None
+
                     self.emit("pass-setup")
                 except Exception as e:
                     _log.debug(e.message)
@@ -994,6 +1004,9 @@ class Transcoder(gobject.GObject):
         
         self.emit("message", bus, message)
     
+    def _cb_no_app_message_timeout(self):
+        self.emit("error", "Pipeline Hanged. No application Message Received", 0)
+
     def start(self, reset_timer=True):
         """
             Start the pipeline!

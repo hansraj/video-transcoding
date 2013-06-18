@@ -968,7 +968,6 @@ class Transcoder(gobject.GObject):
                     if self._do_seek(self.pipe) != True:
                         _log.debug("Seek failed!")
                         # failure to seek is an error, that should be raised
-                        self.emit("error", "Seek Failed", 0)
 
                     uridecode_elem = self.pipe.get_by_name("uridecode")
                     fake = self.pipe.get_by_name("fake")
@@ -1012,6 +1011,8 @@ class Transcoder(gobject.GObject):
 
                 except Exception as e:
                     _log.debug(e.message)
+                    for pad in uridecode_elem.pads():
+                        pad.set_blocked(False)
                     self.emit("error", e.message, 0)
 
         elif t == gst.MESSAGE_ASYNC_DONE:

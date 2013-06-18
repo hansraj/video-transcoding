@@ -115,7 +115,7 @@
             "extension": "mp4", 
             "vcodec": {
                 "passes": [
-                    "pass=qual quantizer=21 me=umh subme=6 ref=3 threads=0"
+                    "pass=pass1 "
                 ], 
                 "container": "mp4mux", 
                 "name": "x264enc", 

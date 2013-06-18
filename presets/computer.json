@@ -66,8 +66,8 @@
             "extension": "mp4", 
             "vcodec": {
                 "passes": [
-                    "pass=pass1 multipass-cache-file=/tmp/x264.log",
-                    "pass=pass2 multipass-cache-file=/tmp/x264.log"
+                    "pass=pass1 multipass-cache-file=/tmp/x264-%(random)s.log",
+                    "pass=pass2 multipass-cache-file=/tmp/x264-%(random)s.log"
                 ], 
                 "container": "mp4mux", 
                 "name": "x264enc", 
@@ -115,7 +115,7 @@
             "extension": "mp4", 
             "vcodec": {
                 "passes": [
-                    "pass=pass1 "
+                    "pass=pass1 multipass-cache-file=/tmp/x264-%(random)s.log"
                 ], 
                 "container": "mp4mux", 
                 "name": "x264enc", 

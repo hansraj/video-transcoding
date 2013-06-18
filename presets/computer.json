@@ -120,11 +120,11 @@
                 "container": "mp4mux", 
                 "name": "x264enc", 
                 "height": [
-                    240, 
+                    32,
                     1080
                 ], 
                 "width": [
-                    320, 
+                    32,
                     1920
                 ], 
                 "rate": [

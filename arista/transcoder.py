@@ -33,7 +33,7 @@ import os.path
 import sys
 import time
 import threading
-
+import random
 # Default to 1 CPU
 CPU_COUNT = 1 
 try:
@@ -214,6 +214,7 @@ class Transcoder(gobject.GObject):
         self.pipe = None
         
         self.enc_pass = 0
+        self.random_num = str(time.time()) + "-" +  str(random.randint(1,100000))
        
         if self.options.nb_threads == 0: # auto-detect
             self.cpu_count = CPU_COUNT
@@ -696,7 +697,7 @@ class Transcoder(gobject.GObject):
             # =================================================================
             vencoder = "%s %s" % (self.preset.vcodec.name,
                                   self.preset.vcodec.passes[self.enc_pass] % {
-                                    "threads": self.cpu_count,
+                                    "random": self.random_num,
                                   })
             
             # FIXME : vp8enc requires the parameter as 'target-bitrate' and 
@@ -840,7 +841,7 @@ class Transcoder(gobject.GObject):
 
     def _handle_video_pad_added(self, elem, pad, video_pads):
         if not self.video_str:
-            return
+            return False
 
         video_str = self.video_str % (video_pads, video_pads)
         video_subpipe = gst.parse_launch(video_str)
@@ -859,9 +860,13 @@ class Transcoder(gobject.GObject):
             link = q.link(muxer)
             _log.debug("Result of linking %s to % s => %r" % (q, muxer, link))
 
+            return True
+        else:
+            return False
+
     def _handle_audio_pad_added(self, elem, pad, audio_pads):
         if not self.audio_str:
-            return
+            return False
 
         audio_str = self.audio_str % (audio_pads, audio_pads)
         audio_subpipe = gst.parse_launch(audio_str)
@@ -879,6 +884,9 @@ class Transcoder(gobject.GObject):
             q = self.pipe.get_by_name("q_aenc_mux_%d" % audio_pads)
             link = q.link(muxer)
             _log.debug("Result of linking %s to % s => %r" % (q, muxer, link))
+            return True
+        else:
+            return False
 
     def _do_seek(self, elem):
         start, stop = self.options.start_time, self.options.stop_time
@@ -978,23 +986,30 @@ class Transcoder(gobject.GObject):
                     audio_pads = 0
                     for pad in uridecode_elem.pads():
                         if "video" in pad.get_caps().to_string():
-                            video_pads += 1
-                            self._handle_video_pad_added(uridecode_elem, pad, video_pads)
+                            vpad_added = self._handle_video_pad_added(uridecode_elem, pad, video_pads)
+                            if vpad_added:
+                                video_pads += 1
                         elif "audio" in pad.get_caps().to_string():
-                            audio_pads += 1
-                            self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
+                            apad_added = self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
+                            if apad_added:
+                                audio_pads += 1
 
                     # unblocking all pads again (no matter what type)
                     for pad in uridecode_elem.pads():
                         pad.set_blocked(False)
 
-                    self.start()
-                    # remove the timeoutid
+                    # remove timeout id - error after this is error in start
                     if self._timeoutid:
                         gobject.source_remove(self._timeoutid)
                         self._timeoutid = None
 
-                    self.emit("pass-setup")
+                    if (audio_pads + video_pads) > 0:
+                        self.start()
+                        self.emit("pass-setup")
+                    else:
+                        # Send eos - that completes pass and then next pass can be started
+                        self.pipe.post_message(gst.message_new_eos(self.pipe))
+
                 except Exception as e:
                     _log.debug(e.message)
                     self.emit("error", e.message, 0)

@@ -35,7 +35,6 @@ import time
 import threading
 import random
 # Default to 1 CPU
-CPU_COUNT = 1 
 try:
     import multiprocessing
     try:
@@ -44,6 +43,7 @@ try:
         pass
 except ImportError:
     pass
+CPU_COUNT = 1 
 
 import gobject
 import gst
@@ -933,6 +933,8 @@ class Transcoder(gobject.GObject):
                 
         seek_flags = gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE
 
+        _log.debug("start: %d", start * gst.SECOND)
+        _log.debug("stop: %d", stop * gst.SECOND)
         ret = elem.seek(1.0, gst.FORMAT_TIME, seek_flags,
                         gst.SEEK_TYPE_SET, start * gst.SECOND,
                         stop_seek_type, stop * gst.SECOND)
@@ -993,14 +995,14 @@ class Transcoder(gobject.GObject):
                             if apad_added:
                                 audio_pads += 1
 
-                    # unblocking all pads again (no matter what type)
-                    for pad in uridecode_elem.pads():
-                        pad.set_blocked(False)
-
                     # remove timeout id - error after this is error in start
                     if self._timeoutid:
                         gobject.source_remove(self._timeoutid)
                         self._timeoutid = None
+
+                    # unblocking all pads again (no matter what type)
+                    for pad in uridecode_elem.pads():
+                        pad.set_blocked_async(False, self._cb_unblocked)
 
                     if (audio_pads + video_pads) > 0:
                         self.start()
@@ -1020,6 +1022,9 @@ class Transcoder(gobject.GObject):
         
         self.emit("message", bus, message)
     
+    def _cb_unblocked(self, *args):
+        _log.debug(args)
+
     def _cb_no_app_message_timeout(self):
         self.emit("error", "Pipeline Hanged. No application Message Received", 0)
 

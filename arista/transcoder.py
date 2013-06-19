@@ -33,9 +33,8 @@ import os.path
 import sys
 import time
 import threading
-
+import random
 # Default to 1 CPU
-CPU_COUNT = 1 
 try:
     import multiprocessing
     try:
@@ -44,6 +43,7 @@ try:
         pass
 except ImportError:
     pass
+CPU_COUNT = 1 
 
 import gobject
 import gst
@@ -59,6 +59,8 @@ _log = logging.getLogger("arista.transcoder")
 # =============================================================================
 # Custom exceptions
 # =============================================================================
+
+_NO_APPLICATION_MSG_TIMEOUT = 20000
 
 class TranscoderException(Exception):
     """
@@ -212,6 +214,7 @@ class Transcoder(gobject.GObject):
         self.pipe = None
         
         self.enc_pass = 0
+        self.random_num = str(time.time()) + "-" +  str(random.randint(1,100000))
        
         if self.options.nb_threads == 0: # auto-detect
             self.cpu_count = CPU_COUNT
@@ -694,7 +697,7 @@ class Transcoder(gobject.GObject):
             # =================================================================
             vencoder = "%s %s" % (self.preset.vcodec.name,
                                   self.preset.vcodec.passes[self.enc_pass] % {
-                                    "threads": self.cpu_count,
+                                    "random": self.random_num,
                                   })
             
             # FIXME : vp8enc requires the parameter as 'target-bitrate' and 
@@ -777,6 +780,9 @@ class Transcoder(gobject.GObject):
         self.audio_str = audio_str
         self.mux_str = mux_str
 
+        self._timeoutid = None # Need to make sure this is None every pass
+        self._timeoutid = gobject.timeout_add(_NO_APPLICATION_MSG_TIMEOUT,
+                                                self._cb_no_app_message_timeout)
         self._build_pipeline(uridecode_str)
     
     def _build_pipeline(self, uridecode_str):
@@ -835,7 +841,7 @@ class Transcoder(gobject.GObject):
 
     def _handle_video_pad_added(self, elem, pad, video_pads):
         if not self.video_str:
-            return
+            return False
 
         video_str = self.video_str % (video_pads, video_pads)
         video_subpipe = gst.parse_launch(video_str)
@@ -854,9 +860,13 @@ class Transcoder(gobject.GObject):
             link = q.link(muxer)
             _log.debug("Result of linking %s to % s => %r" % (q, muxer, link))
 
+            return True
+        else:
+            return False
+
     def _handle_audio_pad_added(self, elem, pad, audio_pads):
         if not self.audio_str:
-            return
+            return False
 
         audio_str = self.audio_str % (audio_pads, audio_pads)
         audio_subpipe = gst.parse_launch(audio_str)
@@ -874,6 +884,9 @@ class Transcoder(gobject.GObject):
             q = self.pipe.get_by_name("q_aenc_mux_%d" % audio_pads)
             link = q.link(muxer)
             _log.debug("Result of linking %s to % s => %r" % (q, muxer, link))
+            return True
+        else:
+            return False
 
     def _do_seek(self, elem):
         start, stop = self.options.start_time, self.options.stop_time
@@ -920,6 +933,8 @@ class Transcoder(gobject.GObject):
                 
         seek_flags = gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE
 
+        _log.debug("start: %d", start * gst.SECOND)
+        _log.debug("stop: %d", stop * gst.SECOND)
         ret = elem.seek(1.0, gst.FORMAT_TIME, seek_flags,
                         gst.SEEK_TYPE_SET, start * gst.SECOND,
                         stop_seek_type, stop * gst.SECOND)
@@ -955,7 +970,6 @@ class Transcoder(gobject.GObject):
                     if self._do_seek(self.pipe) != True:
                         _log.debug("Seek failed!")
                         # failure to seek is an error, that should be raised
-                        self.emit("error", "Seek Failed", 0)
 
                     uridecode_elem = self.pipe.get_by_name("uridecode")
                     fake = self.pipe.get_by_name("fake")
@@ -973,20 +987,34 @@ class Transcoder(gobject.GObject):
                     audio_pads = 0
                     for pad in uridecode_elem.pads():
                         if "video" in pad.get_caps().to_string():
-                            video_pads += 1
-                            self._handle_video_pad_added(uridecode_elem, pad, video_pads)
+                            vpad_added = self._handle_video_pad_added(uridecode_elem, pad, video_pads)
+                            if vpad_added:
+                                video_pads += 1
                         elif "audio" in pad.get_caps().to_string():
-                            audio_pads += 1
-                            self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
+                            apad_added = self._handle_audio_pad_added(uridecode_elem, pad, audio_pads)
+                            if apad_added:
+                                audio_pads += 1
 
-                # unblocking all pads again (no matter what type)
+                    # remove timeout id - error after this is error in start
+                    if self._timeoutid:
+                        gobject.source_remove(self._timeoutid)
+                        self._timeoutid = None
+
+                    # unblocking all pads again (no matter what type)
                     for pad in uridecode_elem.pads():
-                        pad.set_blocked(False)
+                        pad.set_blocked_async(False, self._cb_unblocked)
 
-                    self.start()
-                    self.emit("pass-setup")
+                    if (audio_pads + video_pads) > 0:
+                        self.start()
+                        self.emit("pass-setup")
+                    else:
+                        # Send eos - that completes pass and then next pass can be started
+                        self.pipe.post_message(gst.message_new_eos(self.pipe))
+
                 except Exception as e:
                     _log.debug(e.message)
+                    for pad in uridecode_elem.pads():
+                        pad.set_blocked(False)
                     self.emit("error", e.message, 0)
 
         elif t == gst.MESSAGE_ASYNC_DONE:
@@ -994,6 +1022,12 @@ class Transcoder(gobject.GObject):
         
         self.emit("message", bus, message)
     
+    def _cb_unblocked(self, *args):
+        _log.debug(args)
+
+    def _cb_no_app_message_timeout(self):
+        self.emit("error", "Pipeline Hanged. No application Message Received", 0)
+
     def start(self, reset_timer=True):
         """
             Start the pipeline!

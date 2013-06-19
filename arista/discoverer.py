@@ -262,6 +262,17 @@ class Discoverer(gst.Pipeline):
         if not self.set_state(gst.STATE_PLAYING):
             self._finished()
 
+    # Synchronous discoverer
+    def do_discovery(self):
+        def _discovery_done(info, is_media, format_time=False):
+                self.discovery_loop.quit()
+
+        self.connect("discovered", _discovery_done)
+        self.discover()
+
+        self.discovery_loop = gobject.MainLoop()
+        self.discovery_loop.run()
+
     def _time_to_string(self, value):
         """
         transform a value in nanoseconds into a human-readable string

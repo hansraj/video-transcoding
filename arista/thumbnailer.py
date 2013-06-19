@@ -5,13 +5,14 @@ import gst
 import thread
 import gtk
 import gtk.gdk
+from discoverer import Discoverer
 
 import logging
 _log = logging.getLogger("arista.transcoder")
 
 class Thumbnailer(object):
     
-    def __init__(self, filepath, output_dir, interval=None, number=5,\
+    def __init__(self, filepath, output_dir, fileinfo=None, interval=None, number=5,\
                  width=120, height=90, preserve_aspect_ratio=True, prefix="thumbnail", format='jpeg'):
         self.filepath = filepath
         self.output_dir = output_dir
@@ -24,6 +25,7 @@ class Thumbnailer(object):
         self.par = preserve_aspect_ratio
         self.prefix = prefix
         self.format = format
+        self.fileinfo = fileinfo
 
     def create_thumbnails(self):
         _log.debug("Getting Thumbnails for %s" % self.filepath)
@@ -32,6 +34,14 @@ class Thumbnailer(object):
             _log.debug("File not found: %s" % self.filepath)
             return False
 
+        if self.fileinfo is None:
+            self.fileinfo = Discoverer(self.filepath)
+            self.fileinfo.do_discovery()
+
+        if (self.fileinfo is None) or (self.fileinfo.videolength <= 0) or not self.fileinfo.is_video:
+            _log.debug("Skipping thumbnail creation. No video stream found for file: %s." % self.filepath)
+            return False
+ 
         offset = counter = 0 
         caps = "video/x-raw-rgb,format=RGB,width=%s,height=%s,pixel-aspect-ratio=1/1" % (self.width, self.height)
         cmd = "uridecodebin uri=file://%s  ! ffmpegcolorspace ! videorate ! videoscale ! " \
@@ -43,12 +53,12 @@ class Thumbnailer(object):
         pipeline.set_state(gst.STATE_PAUSED)
         pipeline.get_state()
     
-        length, format = pipeline.query_duration(gst.FORMAT_TIME)
+        #length, format = pipeline.query_duration(gst.FORMAT_TIME)
 
         if self.interval is None:
-            self.interval = (length/gst.SECOND) / self.count or 1
+            self.interval = ((self.fileinfo.videolength/gst.SECOND) / self.count) or 1
     
-        while offset < length/gst.SECOND and counter < self.count:
+        while ((offset < self.fileinfo.videolength/gst.SECOND) and (counter < self.count)):
             ret = pipeline.seek_simple( 
                 gst.FORMAT_TIME, gst.SEEK_FLAG_ACCURATE | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
             buffer = appsink.emit('pull-preroll')

@@ -967,6 +967,7 @@ class Transcoder(gobject.GObject):
 
                 # Do a seek 
                 try:
+                    uridecode_elem = self.pipe.get_by_name("uridecode")
                     if self._do_seek(self.pipe) != True:
                         _log.debug("Seek failed!")
                         # it's better to unblock pads here and emit an error
@@ -975,7 +976,6 @@ class Transcoder(gobject.GObject):
                         self.emit("error", e.message, 0)
                         # failure to seek is an error, that should be raised
 
-                    uridecode_elem = self.pipe.get_by_name("uridecode")
                     fake = self.pipe.get_by_name("fake")
 
                     self.pipe.remove(fake)

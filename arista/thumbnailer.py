@@ -6,7 +6,6 @@ import thread
 import gtk
 import gtk.gdk
 from discoverer import Discoverer
-
 import logging
 _log = logging.getLogger("arista.transcoder")
 
@@ -26,6 +25,11 @@ class Thumbnailer(object):
         self.prefix = prefix
         self.format = format
         self.fileinfo = fileinfo
+
+    def on_new_preroll_cb(self, appsink):
+        buffer = appsink.emit('pull-preroll')
+        if buffer:
+            self._load_and_save_file(buffer, buffer.timestamp/gst.SECOND)
 
     def create_thumbnails(self):
         _log.debug("Getting Thumbnails for %s" % self.filepath)
@@ -50,26 +54,26 @@ class Thumbnailer(object):
 
         pipeline = gst.parse_launch(cmd)
         appsink = pipeline.get_by_name("sink")
+        appsink.set_property('emit-signals', True)
+        #Set sync off, make decoding faster
+        appsink.set_property('sync', False)
+        appsink.connect('new-preroll', self.on_new_preroll_cb)
         pipeline.set_state(gst.STATE_PAUSED)
         pipeline.get_state()
     
-        #length, format = pipeline.query_duration(gst.FORMAT_TIME)
-
         if self.interval is None:
             self.interval = ((self.fileinfo.videolength/gst.SECOND) / self.count) or 1
     
         while ((offset < self.fileinfo.videolength/gst.SECOND) and (counter < self.count)):
             ret = pipeline.seek_simple( 
                 gst.FORMAT_TIME, gst.SEEK_FLAG_ACCURATE | gst.SEEK_FLAG_FLUSH, offset * gst.SECOND)
-            buffer = appsink.emit('pull-preroll')
-            if buffer:
-                self._load_and_save_file(offset, buffer)
-                offset += self.interval
+            pipeline.get_state()
+            offset += self.interval
             counter += 1
         return True
 
     # Load pixbuf and save file to disk
-    def _load_and_save_file(self, offset, buffer):
+    def _load_and_save_file(self, buffer, offset):
         file_name = "%s/%s_%s.%s" %  (self.output_dir, self.prefix, offset, self.format)
         try:
             pix_buf = gtk.gdk.pixbuf_new_from_data(buffer.data, \

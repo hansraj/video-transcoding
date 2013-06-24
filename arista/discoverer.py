@@ -265,6 +265,7 @@ class Discoverer(gst.Pipeline):
     # Synchronous discoverer
     def do_discovery(self):
         def _discovery_done(info, is_media, format_time=False):
+                self.set_state(gst.STATE_NULL)
                 self.discovery_loop.quit()
 
         self.connect("discovered", _discovery_done)

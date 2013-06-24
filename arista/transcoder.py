@@ -232,6 +232,7 @@ class Transcoder(gobject.GObject):
     def _got_info(self, info, is_media):
         self.info = info
         self.emit("discovered", info, is_media)
+	info.set_state(gst.STATE_NULL)
         
         if info.is_video or info.is_audio:
             try:
@@ -641,6 +642,8 @@ class Transcoder(gobject.GObject):
             GStreamer elements and their setttings for a particular pass.
         """
         # Get limits and setup caps
+
+        _log.debug("inside setup pass start:%d stop:%d" % (self.options.start_time, self.options.stop_time))
         self.vcaps = gst.Caps()
         self.vcaps.append_structure(gst.Structure("video/x-raw-yuv"))
         self.vcaps.append_structure(gst.Structure("video/x-raw-rgb"))
@@ -780,9 +783,9 @@ class Transcoder(gobject.GObject):
         self.audio_str = audio_str
         self.mux_str = mux_str
 
-        self._timeoutid = None # Need to make sure this is None every pass
+        #self._timeoutid = None # Need to make sure this is None every pass
         self._timeoutid = gobject.timeout_add(_NO_APPLICATION_MSG_TIMEOUT,
-                                                self._cb_no_app_message_timeout)
+                                               self._cb_no_app_message_timeout)
         self._build_pipeline(uridecode_str)
     
     def _build_pipeline(self, uridecode_str):
@@ -968,18 +971,21 @@ class Transcoder(gobject.GObject):
                 # Do a seek 
                 try:
                     uridecode_elem = self.pipe.get_by_name("uridecode")
+                    fake = self.pipe.get_by_name("fake")
                     if self._do_seek(self.pipe) != True:
                         _log.debug("Seek failed!")
                         # it's better to unblock pads here and emit an error
                         for pad in uridecode_elem.pads():
                             pad.set_blocked_async(False, self._cb_unblocked)
-                        self.emit("error", e.message, 0)
+                        self.pipe.remove(fake)
+                        fake.set_State(gst.STATE_NULL)
+                        fake = None
+                        self.emit("error", "seek failed", 0)
                         # failure to seek is an error, that should be raised
-
-                    fake = self.pipe.get_by_name("fake")
 
                     self.pipe.remove(fake)
                     fake.set_state(gst.STATE_NULL)
+                    fake = None
 
                     # adding muxer sub-pipe                
                     mux_subpipe = gst.parse_launch(self.mux_str)
@@ -1027,7 +1033,7 @@ class Transcoder(gobject.GObject):
         self.emit("message", bus, message)
     
     def _cb_unblocked(self, *args):
-        _log.debug(args)
+        pass
 
     def _cb_no_app_message_timeout(self):
         self.emit("error", "Pipeline Hanged. No application Message Received", 0)

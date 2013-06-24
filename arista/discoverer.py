@@ -37,6 +37,7 @@ import os.path
 import gobject
 
 import gst
+import threading
 
 from gst.extend.pygobject import gsignal
 
@@ -55,7 +56,7 @@ class Discoverer(gst.Pipeline):
     file contains decodable multimedia streams.
     """
     __gsignals__ = {
-        'discovered' : (gobject.SIGNAL_RUN_FIRST,
+        'discovered' : (gobject.SIGNAL_RUN_LAST,
                         None,
                         (gobject.TYPE_BOOLEAN, ))
         }
@@ -128,6 +129,9 @@ class Discoverer(gst.Pipeline):
         self.tags = {}
         self._success = False
         self._nomorepads = False
+
+        self._finished_called = False
+        self._lock = threading.Lock()
 
         self._timeoutid = 0
         self._max_interleave = max_interleave
@@ -220,15 +224,20 @@ class Discoverer(gst.Pipeline):
         if self._timeoutid:
             gobject.source_remove(self._timeoutid)
             self._timeoutid = 0
-        gobject.idle_add(self._stop)
+        self._lock.acquire()
+        if not self._finished_called:
+            gobject.idle_add(self._stop)
+        self._finished_called = True
+        self._lock.release()
         return False
 
     def _stop(self):
-        self.debug("success:%d" % self._success)
+        _log.debug("success:%d" % self._success)
         self.finished = True
         self.set_state(gst.STATE_READY)
-        self.debug("about to emit signal")
+        _log.debug("about to emit signal")
         self.emit('discovered', self._success)
+        return False
 
     def _bus_message_cb(self, bus, message):
         if message.type == gst.MESSAGE_EOS:
@@ -381,6 +390,7 @@ class Discoverer(gst.Pipeline):
             else:
                 self.audiodepth = caps[0]["depth"]
             if self._nomorepads and ((not self.is_video) or self.videocaps):
+                _log.debug("called @1")
                 self._finished(True)
         elif "video" in caps.to_string():
             self.videocaps = caps
@@ -397,6 +407,7 @@ class Discoverer(gst.Pipeline):
             except IndexError:
                 pass
             if self._nomorepads and ((not self.is_audio) or self.audiocaps):
+                _log.debug("called @2")
                 self._finished(True)
 
     def _new_decoded_pad_cb(self, dbin, pad, extra=None):

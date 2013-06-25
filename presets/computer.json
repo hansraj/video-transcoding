@@ -115,7 +115,7 @@
             "extension": "mp4", 
             "vcodec": {
                 "passes": [
-                    "pass=pass1 multipass-cache-file=/tmp/x264-%(random)s.log"
+                    "pass=cbr" 
                 ], 
                 "container": "mp4mux", 
                 "name": "x264enc", 

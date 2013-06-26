@@ -118,11 +118,11 @@ def entry_pass_setup(queue, entry, options):
         
         info = entry.transcoder.info
         preset = entry.transcoder.preset
-        if (info.is_video and len(preset.vcodec.passes) > 1) or \
-                             (info.is_audio and len(preset.vcodec.passes) > 1):
+        if (info.is_video and len(entry.transcoder.options.passes) > 1) or \
+                             (info.is_audio and len(entry.transcoder.options.passes) > 1):
             print _("Starting pass %(pass)d of %(total)d") % {
                 "pass": entry.transcoder.enc_pass + 1,
-                "total": entry.transcoder.preset.pass_count,
+                "total": entry.transcoder.options.pass_count,
             }
 
 def entry_complete(queue, entry, options):
@@ -245,7 +245,9 @@ if __name__ == "__main__":
     parser.add_option("--thumbnail-offset", dest = "thumbnail_offset",
                       default=None, nargs=1, type=int,
                       help = _("Set interval for taking thumbnails"))
-
+    parser.add_option("--encoder-passes", dest = "encoder_passes",
+                      default=1, nargs=1, type=int,
+                      help = _("Set interval for taking thumbnails"))
 
     options, args = parser.parse_args()
     
@@ -442,7 +444,8 @@ if __name__ == "__main__":
                                      video_bitrate = options.video_bitrate,
                                      absolute = options.absolute,
                                      max_duration = options.max_duration,
-                                     thumbnail_offset = options.thumbnail_offset)
+                                     thumbnail_offset = options.thumbnail_offset,
+                                     encoder_passes = options.encoder_passes)
 
             queue.append(opts)
         

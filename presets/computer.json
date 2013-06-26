@@ -60,62 +60,16 @@
             }
         },
         {
-            "name": "H264-2pass", 
-            "description": "H.264/AAC in MP4 for the computer 2 Pass",
-            "container": "mp4mux", 
-            "extension": "mp4", 
-            "vcodec": {
-                "passes": [
-                    "pass=pass1 multipass-cache-file=/tmp/x264-%(random)s.log",
-                    "pass=pass2 multipass-cache-file=/tmp/x264-%(random)s.log"
-                ], 
-                "container": "mp4mux", 
-                "name": "x264enc", 
-                "height": [
-                    32, 
-                    1080
-                ], 
-                "width": [
-                    32, 
-                    1920
-                ], 
-                "rate": [
-                    1, 
-                    30
-                ]
-            }, 
-            "acodec": {
-                "passes": [
-                    "bitrate=192000"
-                ], 
-                "container": "mp4mux", 
-                "name": "faac", 
-                "depth": [
-                    8, 
-                    24
-                ], 
-                "channels": [
-                    1, 
-                    6
-                ], 
-                "width": [
-                    8, 
-                    24
-                ], 
-                "rate": [
-                    8000, 
-                    96000
-                ]
-            }
-        },
-        {
             "name": "H.264", 
             "description": "H.264/AAC in MP4 for the computer",
             "container": "mp4mux", 
             "extension": "mp4", 
             "vcodec": {
-                "passes": [
-                    "pass=cbr" 
+                "passes": [ [],
+                    ["pass=cbr "],
+                    [ "pass=pass1 multipass-cache-file=/tmp/x264-%(random)s.log",
+                      "pass=pass2 multipass-cache-file=/tmp/x264-%(random)s.log"
+                    ]
                 ], 
                 "container": "mp4mux", 
                 "name": "x264enc", 

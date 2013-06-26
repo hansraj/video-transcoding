@@ -97,7 +97,7 @@ class TranscoderOptions(object):
                  audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
                  height = None, width = None, framerate = None,
                  video_bitrate = None, absolute = False, max_duration = None,
-                 thumbnail_offset = 0, **kw):
+                 thumbnail_offset = 0, encoder_passes=1, **kw):
         """
             @type uri: str
             @param uri: The URI to the input file, device, or stream
@@ -136,7 +136,7 @@ class TranscoderOptions(object):
         self.reset(uri, preset, output_uri, ssa,subfile, subfile_charset, font, deinterlace,
                    crop, title, chapter, audio, start_time, stop_time, nb_threads,
                    height, width, framerate, video_bitrate, absolute, max_duration, 
-                   thumbnail_offset)
+                   thumbnail_offset, encoder_passes)
     
     def reset(self, uri = None, preset = None, output_uri = None, ssa = False,
               subfile = None, subfile_charset = None, font = "Sans Bold 16",
@@ -144,7 +144,7 @@ class TranscoderOptions(object):
               audio = None, start_time = 0, stop_time = -1, nb_threads = 0,
               height = None, width = None, framerate = None,
               video_bitrate = None, absolute = False, max_duration = None,
-              thumbnail_offset = 0):
+              thumbnail_offset = 0, encoder_passes=1):
         """
             Reset the input options to nothing.
         """
@@ -178,6 +178,9 @@ class TranscoderOptions(object):
         self.absolute = absolute
         self.max_duration = max_duration
         self.thumbnail_offset = thumbnail_offset
+        if encoder_passes not in [1, 2]: encoder_passes = 1
+        self.passes = self.preset.vcodec.passes[encoder_passes]
+        self.pass_count = max(len(self.passes), len(preset.acodec.passes))
 
 # =============================================================================
 # The Transcoder
@@ -232,8 +235,7 @@ class Transcoder(gobject.GObject):
     def _got_info(self, info, is_media):
         self.info = info
         self.emit("discovered", info, is_media)
-	info.set_state(gst.STATE_NULL)
-        
+        info.set_state(gst.STATE_NULL)
         if info.is_video or info.is_audio:
             try:
                 self._setup_pass()
@@ -699,7 +701,7 @@ class Transcoder(gobject.GObject):
             # Setup the video encoder and options
             # =================================================================
             vencoder = "%s %s" % (self.preset.vcodec.name,
-                                  self.preset.vcodec.passes[self.enc_pass] % {
+                                  self.options.passes[self.enc_pass] % {
                                     "random": self.random_num,
                                   })
             
@@ -734,7 +736,7 @@ class Transcoder(gobject.GObject):
         # pass
         audio_str = "" 
         if self.info.is_audio and self.preset.acodec and \
-           self.enc_pass == len(self.preset.vcodec.passes) - 1:
+           self.enc_pass == len(self.options.passes) - 1:
             # =================================================================
             # Update limits based on what the encoder really supports
             # =================================================================
@@ -757,7 +759,7 @@ class Transcoder(gobject.GObject):
             # =================================================================
             aencoder = self.preset.acodec.name + " " + \
                        self.preset.acodec.passes[ \
-                            len(self.preset.vcodec.passes) - \
+                            len(self.options.passes) - \
                             self.enc_pass - 1 \
                        ] % {
                             "threads": self.cpu_count,
@@ -957,7 +959,7 @@ class Transcoder(gobject.GObject):
         if t == gst.MESSAGE_EOS:
             self.state = gst.STATE_NULL
             self.emit("pass-complete")
-            if self.enc_pass < self.preset.pass_count - 1:
+            if self.enc_pass < self.options.pass_count - 1:
                 self.enc_pass += 1
                 self._setup_pass()
                 self.pause()

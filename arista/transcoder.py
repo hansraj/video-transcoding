@@ -241,8 +241,10 @@ class Transcoder(gobject.GObject):
                 self._setup_pass()
             except PipelineException, e:
                 self.emit("error", str(e), 0)
+                info = None
                 return
             self.pause()
+        info = None
 
     def do_discovery(self, filename, callback):
         """ Does discovery of the filename and connects the discovered signal to callback"""
@@ -980,7 +982,7 @@ class Transcoder(gobject.GObject):
                         for pad in uridecode_elem.pads():
                             pad.set_blocked_async(False, self._cb_unblocked)
                         self.pipe.remove(fake)
-                        fake.set_State(gst.STATE_NULL)
+                        fake.set_state(gst.STATE_NULL)
                         fake = None
                         self.emit("error", "seek failed", 0)
                         # failure to seek is an error, that should be raised

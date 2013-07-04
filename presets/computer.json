@@ -67,8 +67,8 @@
             "vcodec": {
                 "passes": [ [],
                     ["pass=cbr "],
-                    [ "pass=pass1 multipass-cache-file=/tmp/x264-%(random)s.log",
-                      "pass=pass2 multipass-cache-file=/tmp/x264-%(random)s.log"
+                    [ "pass=pass1 multipass-cache-file=/tmp/x264-%(filename)s-%(offset)s.log",
+                      "pass=pass2 multipass-cache-file=/tmp/x264-%(filename)s-%(offset)s.log"
                     ]
                 ], 
                 "container": "mp4mux", 

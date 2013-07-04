@@ -704,9 +704,11 @@ class Transcoder(gobject.GObject):
             # =================================================================
             vencoder = "%s %s" % (self.preset.vcodec.name,
                                   self.options.passes[self.enc_pass] % {
-                                    "random": self.random_num,
+                                    "filename": self.infile.split('/').pop().split('.')[0],
+                                    "offset": self.options.start_time,
                                   })
             
+            print vencoder
             # FIXME : vp8enc requires the parameter as 'target-bitrate' and 
             # requires it in bps, while x264 requires it in kbps. In general 
             # this handling should be much better than what it is

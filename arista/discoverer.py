@@ -130,7 +130,7 @@ class Discoverer(gst.Pipeline):
         self._success = False
         self._nomorepads = False
 
-        self._finished_called = False
+        self.counter = 1
         self._lock = threading.Lock()
 
         self._timeoutid = 0
@@ -217,18 +217,27 @@ class Discoverer(gst.Pipeline):
         else:
             self._finished(True)
 
+    def _inc_counter(self):
+        self._lock.acquire()
+        self.counter += 1
+        self._lock.release()
+
+    def _dec_counter(self):
+        self._lock.acquire()
+        self.counter -= 1
+        counter = self.counter
+        self._lock.release()
+        if counter == 0:
+            if self._timeoutid:
+                gobject.source_remove(self._timeoutid)
+                self._timeoutid = 0
+            self.bus.remove_signal_watch()
+            gobject.idle_add(self._stop)
+
     def _finished(self, success=False):
         self.debug("success:%d" % success)
         self._success = success
-        self.bus.remove_signal_watch()
-        if self._timeoutid:
-            gobject.source_remove(self._timeoutid)
-            self._timeoutid = 0
-        self._lock.acquire()
-        if not self._finished_called:
-            gobject.idle_add(self._stop)
-        self._finished_called = True
-        self._lock.release()
+        self._dec_counter()
         return False
 
     def _stop(self):
@@ -340,6 +349,7 @@ class Discoverer(gst.Pipeline):
     def _no_more_pads_cb(self, dbin):
         self.info("no more pads")
         self._nomorepads = True
+        self._dec_counter()
 
     def _unknown_type_cb(self, dbin, pad, caps):
         self.debug("unknown type : %s" % caps.to_string())
@@ -389,9 +399,7 @@ class Discoverer(gst.Pipeline):
                 self.audiofloat = True
             else:
                 self.audiodepth = caps[0]["depth"]
-            if self._nomorepads and ((not self.is_video) or self.videocaps):
-                _log.debug("called @1")
-                self._finished(True)
+            self._finished(True)
         elif "video" in caps.to_string():
             self.videocaps = caps
             self.videolength = length
@@ -406,9 +414,7 @@ class Discoverer(gst.Pipeline):
                 self.videorate = cap["framerate"]
             except IndexError:
                 pass
-            if self._nomorepads and ((not self.is_audio) or self.audiocaps):
-                _log.debug("called @2")
-                self._finished(True)
+            self._finished(True)
 
     def _new_decoded_pad_cb(self, dbin, pad, extra=None):
         # Does the file contain got audio or video ?
@@ -416,8 +422,10 @@ class Discoverer(gst.Pipeline):
         gst.info("caps:%s" % caps.to_string())
         if "audio" in caps.to_string():
             self.is_audio = True
+            self._inc_counter()
         elif "video" in caps.to_string():
             self.is_video = True
+            self._inc_counter()
         else:
             self.warning("got a different caps.. %s" % caps.to_string())
             return
